@@ -78,6 +78,8 @@ F = {
     "pb": ["PBratio", "PriceBookRatio", "股價淨值比"],
     "dy": ["DividendYield", "YieldRatio", "殖利率(%)", "殖利率"],
     "price": ["ClosingPrice", "Close", "收盤價"],
+    "trade_value": ["TradeValue", "TransactionAmount", "成交金額"],
+    "change": ["Change", "漲跌價差"],
 }
 # 每個欄位來自哪個來源（診斷用）
 FIELD_SOURCE = {
@@ -87,10 +89,11 @@ FIELD_SOURCE = {
     "total_assets": "balance", "total_liab": "balance", "cur_assets": "balance",
     "cur_liab": "balance", "equity": "balance",
     "rev_yoy": "revenue", "pe": "valuation", "pb": "valuation", "dy": "valuation", "price": "price",
+    "trade_value": "price", "change": "price",
 }
 # 關鍵欄位：在「該來源有資料的公司」中，填值比例必須達到此門檻，否則判定欄位對應錯誤
 CRITICAL = {"industry": 0.95, "capital": 0.95, "revenue": 0.9, "net_income": 0.9, "eps": 0.9,
-            "total_assets": 0.9, "equity": 0.9, "pe": 0.5, "price": 0.8}
+            "total_assets": 0.9, "equity": 0.9, "pe": 0.5, "price": 0.8, "trade_value": 0.8}
 
 _FW = str.maketrans({"（": "(", "）": ")", "％": "%", "－": "-", "　": ""})
 
@@ -203,6 +206,8 @@ def build_companies(raw):
             if not shares and capital:
                 shares = capital / (par if par else 10)
             price = num(pick(p, F["price"]))
+            chg = num(pick(p, F["change"]))
+            prev_close = price - chg if price is not None and chg is not None else None
             mcap = shares * price / 1e8 if shares and price else None  # 單位：億元
             season = num(pick(i, F["season"]))
             companies.append({
@@ -216,6 +221,9 @@ def build_companies(raw):
                 "price": price,
                 "price_date": str(pick(p, ["Date"]) or "") or None,
                 "mcap": mcap,
+                "trade_value": num(pick(p, F["trade_value"])),
+                "change": chg,
+                "change_pct": round(chg / prev_close * 100, 2) if prev_close else None,
                 "year": str(pick(i, F["year"]) or "").strip() or None,
                 "season": int(season) if season else None,
                 "revenue": num(pick(i, F["revenue"])),

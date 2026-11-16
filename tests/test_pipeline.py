@@ -135,6 +135,22 @@ def test_score_and_rank(cs):
     check("族群：去除重複代號、列出找不到的代號", th["missing"] == ["0000"] and len(th["mcap"]) == 2)
     sc = [by[c]["score"] for c in th["score"] if by[c]["score"] is not None]
     check("族群：依評分排序", sc == sorted(sc, reverse=True))
+    # 熱度：近 N 日平均成交值
+    hist = {}
+    score.update_heat_history([{"code": "A", "trade_value": 1e8, "price_date": "1151110"}], hist, 5)
+    score.update_heat_history([{"code": "A", "trade_value": 3e8, "price_date": "1151111"}], hist, 5)
+    heat = score.update_heat_history([{"code": "A", "trade_value": 3e8, "price_date": "1151111"}], hist, 5)
+    check("熱度：同一天重跑不重複計入，取多日平均", heat["A"] == 2.0 and len(hist["A"]) == 2, str(heat))
+    for i in range(12):
+        score.update_heat_history([{"code": "A", "trade_value": 1e8, "price_date": f"11512{i:02d}"}], hist, 5)
+    check("熱度：歷史最多保留 10 天", len(hist["A"]) == 10)
+    # 熱門題材排序與取前 N 名
+    cs3 = out["companies"]
+    pc = {"show_top": 2, "themes": {f"T{i}": {cs3[i]["code"]: "產品", cs3[i + 10]["code"]: "產品", "0000": "x"} for i in range(4)}}
+    ht = {cs3[i]["code"]: float(i) for i in range(4)}
+    hot, pool = score.build_products([dict(c) for c in cs3], pc, ht)
+    check("熱門題材：依熱度排序並只取前 N 名", [t["name"] for t in hot] == ["T3", "T2"] and pool == 4, str([t["name"] for t in hot]))
+    check("熱門題材：記錄主力產品與找不到的代號", hot[0]["items"][cs3[3]["code"]] == "產品" and hot[0]["missing"] == ["0000"])
     size_kb = len(json.dumps(out, ensure_ascii=False, separators=(",", ":")).encode()) / 1024
     check("輸出檔大小合理（< 3MB）", size_kb < 3072, f"({size_kb:.0f} KB)")
     return out

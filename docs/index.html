@@ -20,7 +20,7 @@ body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 -apple-system
 h1{font-size:18px;margin:6px 0 2px}
 .sub{color:var(--muted);font-size:12px;margin-bottom:10px}
 .seg{display:flex;background:var(--hold-bg);border-radius:10px;padding:3px;gap:3px;margin:8px 0}
-.seg button{flex:1;border:0;background:transparent;color:var(--muted);padding:9px 6px;border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
+.seg button{flex:1;border:0;background:transparent;color:var(--muted);padding:9px 2px;white-space:nowrap;border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
 .seg button[aria-pressed=true]{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .controls{display:grid;gap:8px;margin:8px 0}
 .row{display:flex;gap:8px}
@@ -53,6 +53,8 @@ ul.pts{margin:4px 0;padding-left:18px;font-size:13px}
 .flag{color:var(--buy)}
 .ind{margin:18px 2px 4px;font-size:15px;font-weight:800}
 .ind-sub{color:var(--muted);font-size:12px;margin:0 2px 4px}
+.prod{font-size:12px;color:var(--accent);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.up{color:var(--buy)}.down{color:var(--sell)}
 .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
 .tag{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--hold-bg);color:var(--muted)}
 button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);background:var(--card);color:var(--accent);border-radius:10px;font:inherit;font-weight:600}
@@ -69,6 +71,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
     <button id="v-all" aria-pressed="true">全市場</button>
     <button id="v-top" aria-pressed="false">產業前三名</button>
     <button id="v-theme" aria-pressed="false">主題族群</button>
+    <button id="v-hot" aria-pressed="false">熱門產品</button>
   </div>
 
   <div id="ctl-all" class="controls">
@@ -125,11 +128,12 @@ const fmtMcap = (v) => v == null ? "—" : v >= 10000 ? (v / 10000).toFixed(2) +
 const rocDate = (d) => { const m = /^(\d{3})(\d{2})(\d{2})$/.exec(d || ""); return m ? `${+m[1] + 1911}/${m[2]}/${m[3]}` : "—"; };
 const fmtNum = (v, d = 1) => v == null ? "—" : Number(v).toFixed(d);
 
-function card(c, rank) {
+function card(c, rank, product) {
   const sum = h("summary", {},
     rank ? h("span", { class: "rank" }, rank) : null,
     h("div", { class: "main" },
       h("div", { class: "nm" }, c.name, h("small", {}, c.code)),
+      product ? h("div", { class: "prod" }, "主力產品：" + product) : null,
       h("div", { class: "meta" }, `${c.industry}・${c.market}・市值 ${fmtMcap(c.mcap)}` +
         (c.stale ? "・沿用前次財報" : "") +
         (c.label !== "資料不足" && c.coverage < 0.7 ? "・資料涵蓋度低" : ""))),
@@ -207,11 +211,31 @@ function renderTheme() {
   }
 }
 
+function renderHot() {
+  const P = D.products || [];
+  const by = st.rankBy === "score" ? "評分" : "市值";
+  const meta = D.products_meta || {};
+  $("count").textContent = `近 ${meta.days || 5} 日平均成交值最高的 ${P.length} 個題材（候選 ${meta.pool || P.length} 個），題材內依${by}排序`;
+  const list = $("list"); list.replaceChildren();
+  for (const t of P) {
+    const codes = t[st.rankBy].filter((c) => BY[c]);
+    const lb = ["買進", "觀望", "賣出", "資料不足"].filter((l) => t.labels[l]).map((l) => `${l} ${t.labels[l]}`).join("・");
+    const chg = t.change == null ? null : h("span", { class: t.change > 0 ? "up" : t.change < 0 ? "down" : "" },
+      `${t.change > 0 ? "+" : ""}${t.change.toFixed(2)}%`);
+    list.append(h("div", { class: "ind" }, `#${t.rank} ${t.name}（${codes.length} 檔）`),
+      h("div", { class: "ind-sub" }, `均成交值 ${Math.round(t.heat).toLocaleString()} 億｜平均漲跌 `, chg || "—",
+        `｜平均評分 ${t.avg_score == null ? "—" : Math.round(t.avg_score)}｜${lb}` +
+        (t.missing.length ? `｜找不到代號：${t.missing.join("、")}` : "")));
+    codes.forEach((code, i) => list.append(card(BY[code], i + 1, t.items[code])));
+  }
+}
+
 function render() {
   $("ctl-all").hidden = st.view !== "all";
   $("ctl-top").hidden = st.view === "all";
   $("theme-pick").hidden = st.view !== "theme";
   $("v-theme").setAttribute("aria-pressed", st.view === "theme");
+  $("v-hot").setAttribute("aria-pressed", st.view === "hot");
   $("v-all").setAttribute("aria-pressed", st.view === "all");
   $("v-top").setAttribute("aria-pressed", st.view === "top");
   $("r-score").setAttribute("aria-pressed", st.rankBy === "score");
@@ -219,7 +243,8 @@ function render() {
   document.querySelectorAll("#chips .chip").forEach((b) => b.setAttribute("aria-pressed", b.dataset.l === st.label));
   if (st.view === "all") renderAll();
   else if (st.view === "top") renderTop();
-  else renderTheme();
+  else if (st.view === "theme") renderTheme();
+  else renderHot();
 }
 
 async function init() {
@@ -245,6 +270,7 @@ async function init() {
   $("v-all").onclick = () => { st.view = "all"; render(); };
   $("v-top").onclick = () => { st.view = "top"; render(); };
   $("v-theme").onclick = () => { st.view = "theme"; render(); };
+  $("v-hot").onclick = () => { st.view = "hot"; render(); };
   $("theme-pick").append(h("option", { value: "全部" }, "全部族群"), ...Object.keys(D.themes || {}).map((n) => h("option", { value: n }, n)));
   $("theme-pick").onchange = (e) => { st.theme = e.target.value; render(); };
   $("r-score").onclick = () => { st.rankBy = "score"; render(); };

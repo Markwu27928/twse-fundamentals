@@ -152,7 +152,53 @@ def build_themes(out, themes):
     return result
 
 
-def build(raw_companies, cfg, generated_at, themes=None):
+def update_heat_history(companies, hist, days, keep=10):
+    """記錄每檔股票每日成交值（依股價日期），回傳 {代號: 近 days 日平均成交值（億元）}。"""
+    for c in companies:
+        v, d = c.get("trade_value"), c.get("price_date")
+        if v is None or not d:
+            continue
+        h = hist.setdefault(c["code"], {})
+        h[d] = v
+        for old in sorted(h)[:-keep]:
+            del h[old]
+    avg = {}
+    for code, h in hist.items():
+        recent = [h[d] for d in sorted(h)[-days:]]
+        if recent:
+            avg[code] = sum(recent) / len(recent) / 1e8
+    return avg
+
+
+def build_products(out, pcfg, heat):
+    """熱門產品題材：依成分股近 N 日平均成交值合計排序，取前 show_top 名。"""
+    by = {x["code"]: x for x in out}
+    themes = []
+    for name, items in pcfg.get("themes", {}).items():
+        members = [by[c] for c in items if c in by]
+        scored = sorted([m for m in members if m["score"] is not None], key=lambda x: (-x["score"], -(x["mcap"] or 0)))
+        chg = [m["change_pct"] for m in members if m.get("change_pct") is not None]
+        labels = {}
+        for m in members:
+            labels[m["label"]] = labels.get(m["label"], 0) + 1
+        themes.append({
+            "name": name,
+            "heat": round(sum(heat.get(m["code"], 0) for m in members), 1),
+            "change": round(sum(chg) / len(chg), 2) if chg else None,
+            "avg_score": round(sum(m["score"] for m in scored) / len(scored), 1) if scored else None,
+            "labels": labels,
+            "score": [m["code"] for m in scored] + [m["code"] for m in members if m["score"] is None],
+            "mcap": [m["code"] for m in sorted(members, key=lambda x: -(x["mcap"] or -1))],
+            "items": {c: p for c, p in items.items() if c in by},
+            "missing": [c for c in items if c not in by],
+        })
+    themes.sort(key=lambda t: -t["heat"])
+    for i, t in enumerate(themes, 1):
+        t["rank"] = i
+    return themes[: pcfg.get("show_top", 20)], len(themes)
+
+
+def build(raw_companies, cfg, generated_at, themes=None, products=None, heat=None):
     out = []
     for c in raw_companies:
         metrics, subs, score, label, cov, flags, up, dn = score_company(c, cfg)
@@ -168,6 +214,8 @@ def build(raw_companies, cfg, generated_at, themes=None):
             "mcap": None if c.get("mcap") is None else round(c["mcap"], 2),
             "price": c.get("price"),
             "price_date": c.get("price_date"),
+            "change_pct": c.get("change_pct"),
+            "trade_value": None if c.get("trade_value") is None else round(c["trade_value"] / 1e8, 2),
             "financial": is_financial(c),
             "stale": bool(c.get("stale")),
             "period": period,
@@ -190,6 +238,7 @@ def build(raw_companies, cfg, generated_at, themes=None):
         top_mcap[ind] = [x["code"] for x in sized[:3]]
 
     theme_groups = build_themes(out, themes or {})
+    hot, pool = build_products(out, products or {}, heat or {})
 
     counts = {}
     for x in out:
@@ -203,6 +252,8 @@ def build(raw_companies, cfg, generated_at, themes=None):
         "companies": out,
         "top": {"score": top_score, "mcap": top_mcap},
         "themes": theme_groups,
+        "products": hot,
+        "products_meta": {"pool": pool, "days": (products or {}).get("heat_days", 5)},
     }
 
 
@@ -213,7 +264,16 @@ def main(src=None, dst=None):
     payload = json.loads(src.read_text(encoding="utf-8"))
     tpath = ROOT / "config" / "themes.json"
     themes = json.loads(tpath.read_text(encoding="utf-8")).get("themes", {}) if tpath.exists() else {}
-    result = build(payload["companies"], cfg, payload["generated_at"], themes)
+    ppath = ROOT / "config" / "products.json"
+    products = json.loads(ppath.read_text(encoding="utf-8")) if ppath.exists() else {}
+    hpath = src.parent / "turnover_history.json"
+    hist = json.loads(hpath.read_text(encoding="utf-8")) if hpath.exists() else {}
+    heat = update_heat_history(payload["companies"], hist, products.get("heat_days", 5))
+    hpath.write_text(json.dumps(hist, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    result = build(payload["companies"], cfg, payload["generated_at"], themes, products, heat)
+    for t in result["products"]:
+        if t["missing"]:
+            print(f"[提醒] 題材「{t['name']}」找不到代號：{', '.join(t['missing'])}")
     for name, g in result["themes"].items():
         if g["missing"]:
             print(f"[提醒] 族群「{name}」找不到代號：{', '.join(g['missing'])}")

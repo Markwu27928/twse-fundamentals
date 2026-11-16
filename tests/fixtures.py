@@ -32,7 +32,9 @@ def make_raw(n_twse=1100, n_tpex=700, seed=7):
             # 股價 / 估值（上櫃欄位名稱不同）
             no_trade = rng.random() < 0.03
             pcode = "SecuritiesCompanyCode" if tpex else "Code"
-            src["price"].append({pcode: cid, ("Close" if tpex else "ClosingPrice"): "--" if no_trade else fmt(price, 2)})
+            src["price"].append({"Date": "1151116", pcode: cid, ("Close" if tpex else "ClosingPrice"): "--" if no_trade else fmt(price, 2),
+                                 ("TransactionAmount" if tpex else "TradeValue"): "0" if no_trade else str(int(rng.uniform(1e6, 5e10))),
+                                 "Change": "0.00" if no_trade else f"{rng.uniform(-0.05, 0.05) * price:+.2f}"})
             pe = round(rng.uniform(5, 60), 2)
             val = {pcode: cid}
             if tpex:

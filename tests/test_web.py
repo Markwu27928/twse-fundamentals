@@ -121,6 +121,16 @@ def main():
             page.screenshot(path=str(shots / "shot_theme.png"))
             page.select_option("#theme-pick", "全部")
 
+        # 熱門產品
+        page.click("#v-hot")
+        check("熱門產品分頁：排名切換顯示、族群選單隱藏", page.locator("#r-score").is_visible() and page.locator("#theme-pick").is_hidden())
+        n_hot = page.locator(".ind").count()
+        check("熱門產品：最多 20 個題材且依熱度排名", 0 < n_hot <= 20 and page.locator(".ind").first.inner_text().startswith("#1 "), f"({n_hot})")
+        heats = [int(x.split("均成交值 ")[1].split(" 億")[0].replace(",", "")) for x in page.locator(".ind-sub").all_inner_texts()]
+        check("熱門產品：成交值由高到低", heats == sorted(heats, reverse=True), str(heats[:5]))
+        check("熱門產品：卡片顯示主力產品", "主力產品：" in page.locator("details.co").first.inner_text())
+        page.screenshot(path=str(shots / "shot_hot.png"))
+
         # 切回全市場，狀態保留
         page.click("#v-all")
         check("切回全市場", page.locator("#ctl-all").is_visible() and page.locator("details.co").count() == 100 and page.locator("#theme-pick").is_hidden())
