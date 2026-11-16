@@ -48,7 +48,7 @@ def main():
         c.setdefault("growth", {"avg3_yoy": None, "prev3_yoy": None, "accel": None, "high12": None, "months": 0, "hist": []})
     for i, c in enumerate(pot):
         c["potential"], c["potential_rank"] = True, 100.0 - i * 10
-        c["potential_notes"] = ["近 3 月平均年增 35.0%", "年增加速（前 3 月 12.0% → 近 3 月 35.0%）"]
+        c["potential_notes"] = ["近 3 月營收合計年增 35.0%", "年增加速（前 3 月 12.0% → 近 3 月 35.0%）"]
         c["growth"] = {"avg3_yoy": 35.0, "prev3_yoy": 12.0, "accel": 23.0, "high12": True, "months": 12,
                        "hist": [["202610", 523456.0, 4.2, 38.0], ["202609", 502000.0, 3.1, 35.5], ["202608", 487000.0, 2.0, 31.5],
                                 ["202607", 477000.0, 1.0, 14.0], ["202606", 472000.0, -1.0, 12.0], ["202605", 476000.0, 0.5, 10.0]]}

@@ -142,12 +142,18 @@
     "bonus": 5
   },
   "growth_potential": {
-    "_說明": "營收成長潛力股：以下條件全部符合才列入。營收單位為千元（100000 = 1 億元）。yoy_cap 用來限制極端年增（基期過低）對排序的影響。",
-    "avg3_yoy_min": 20,
+    "_說明": "營收成長潛力股：以下條件全部符合才列入。年增以『近 3 個月營收合計 ÷ 去年同期合計』計算。營收單位千元（100000 = 1 億元）。建材營造業交屋時一次認列營收，月營收年增失真，預設排除。",
+    "avg3_yoy_min": 25,
     "require_accel": true,
     "latest_yoy_min": 0,
     "min_month_rev_k": 100000,
     "exclude_op_loss": true,
-    "yoy_cap": 150
+    "yoy_cap": 150,
+    "min_accel_pp": 10,
+    "require_all3_positive": true,
+    "exclude_industries": [
+      "14"
+    ],
+    "require_high12": true
   }
 }

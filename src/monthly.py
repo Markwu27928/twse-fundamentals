@@ -160,23 +160,36 @@ def months_back(ym, n):
     return out
 
 
+def _agg_yoy(items):
+    """多個月合計年增：sum(本期營收) / sum(去年同月營收) − 1。去年同月由 營收 ÷ (1 + 年增%) 還原。
+    任一月份缺資料、或年增 ≤ −100%（無法還原）時回傳 None。"""
+    cur = ly = 0.0
+    for rev, yoy in items:
+        if rev is None or yoy is None or yoy <= -100:
+            return None
+        cur += rev
+        ly += rev / (1 + yoy / 100)
+    if ly <= 0:
+        return None
+    return round((cur / ly - 1) * 100, 2)
+
+
 def growth_profile(h, latest):
-    """近 3 月／前 3 月平均年增、加速幅度、是否創近 12 個月新高、近 6 個月明細。資料不足的項目為 None。"""
+    """近 3 月／前 3 月「合計」營收年增、加速幅度、近 3 月是否每月年增皆為正、是否創近 12 個月新高、近 6 個月明細。
+    以合計計算年增，避免單月暴衝（例如一次認列的大額營收）被平均放大。資料不足的項目為 None。"""
     seq = months_back(latest, 12)
-    yoy = [h.get(ym, {}).get("yoy") for ym in seq]
-    rev = [h.get(ym, {}).get("rev") for ym in seq]
-
-    def avg(xs):
-        return round(sum(xs) / len(xs), 2) if xs and all(x is not None for x in xs) else None
-
-    a3, p3 = avg(yoy[:3]), avg(yoy[3:6])
+    pairs = [(h.get(ym, {}).get("rev"), h.get(ym, {}).get("yoy")) for ym in seq]
+    a3, p3 = _agg_yoy(pairs[:3]), _agg_yoy(pairs[3:6])
+    rev = [p[0] for p in pairs]
     known = [r for r in rev if r is not None]
     high12 = None
     if len(known) == 12 and rev[0] is not None:
         high12 = rev[0] >= max(rev[1:])
+    y3 = [p[1] for p in pairs[:3]]
     return {
         "avg3_yoy": a3, "prev3_yoy": p3,
         "accel": round(a3 - p3, 2) if a3 is not None and p3 is not None else None,
+        "all3_pos": all(y is not None and y > 0 for y in y3) if all(y is not None for y in y3) else None,
         "high12": high12, "months": len(known),
         "hist": [[ym, h[ym].get("rev"), h[ym].get("mom"), h[ym].get("yoy")] for ym in seq[:6] if ym in h],
     }

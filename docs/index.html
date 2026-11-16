@@ -118,7 +118,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
   <div class="foot">
     評分為依設定檔規則計算的財報體質分數，並非預測股價漲跌，也不構成投資建議。<br>
     標籤顏色採台股習慣：買進為紅、賣出為綠。<br>
-    「營收成長潛力」：近 3 月單月營收年增平均 ≥ 20%、比前 3 月加速、最新月年增為正、月營收 ≥ 1 億且本業未虧損（不影響評分，供篩選參考）。<br>
+    「營收成長潛力」：近 3 個月營收合計年增 ≥ 25%、比前 3 個月加速 10 個百分點以上、近 3 個月每月年增皆為正、最新月營收創近 12 個月新高、月營收 ≥ 1 億且本業未虧損；建材營造業不適用（不影響評分，供篩選參考）。<br>
     「營收連兩月成長」：最近兩個月的單月營收，月增率與年增率都大於 0，評分另加分。<br>
     ROE 以累計淨利年化估算。金融業（銀行、金控、證券、保險）不評毛利率、負債比、流動比。<br>
     資料來源：證交所、櫃買中心開放資料。官方尚未提供財報的公司標示「資料不足」。
@@ -185,7 +185,7 @@ function card(c, rank, product) {
       G.hist.map(([m, rev, mom, yoy]) => h("tr", {}, h("td", {}, ym(m)), h("td", {}, rev == null ? "—" : (rev / 1e5).toFixed(2)),
         h("td", {}, pctSpan(mom, 1)), h("td", {}, pctSpan(yoy, 1))))));
     if (G.avg3_yoy != null) body.append(h("div", { class: "meta", style: "margin-top:4px" },
-      `近 3 月平均年增 ${G.avg3_yoy.toFixed(1)}%` + (G.prev3_yoy != null ? `，前 3 月 ${G.prev3_yoy.toFixed(1)}%` : "") +
+      `近 3 月營收合計年增 ${G.avg3_yoy.toFixed(1)}%` + (G.prev3_yoy != null ? `，前 3 月 ${G.prev3_yoy.toFixed(1)}%` : "") +
       (G.high12 ? "，最新月營收創近 12 個月新高" : "")));
   } else if (c.rev && c.rev.month) {
     const ym = (v) => v ? `${v.slice(0, 4)}/${v.slice(4)}` : "—";

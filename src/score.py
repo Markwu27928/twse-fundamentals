@@ -139,27 +139,35 @@ def growth_potential(c, cfg):
     notes, ok = [], True
     if a3 is None:
         return False, None, ["近 3 個月營收資料不足"]
+    if str(c.get("industry", "")) in gp.get("exclude_industries", []):
+        return False, None, ["建材營造業營收認列集中，不適用月營收成長判斷"]
     cap = gp.get("yoy_cap", 150)
     if a3 >= gp.get("avg3_yoy_min", 20):
-        notes.append(f"近 3 月平均年增 {a3:.1f}%")
+        notes.append(f"近 3 月營收合計年增 {a3:.1f}%")
     else:
         ok = False
     if gp.get("require_accel", True):
         if acc is None:
             ok = False
             notes.append("前 3 個月資料不足，無法判斷加速")
-        elif acc > 0:
+        elif acc >= gp.get("min_accel_pp", 0) and acc > 0:
             notes.append(f"年增加速（前 3 月 {p3:.1f}% → 近 3 月 {a3:.1f}%）")
         else:
             ok = False
     if latest_yoy is None or latest_yoy <= gp.get("latest_yoy_min", 0):
         ok = False
+    if gp.get("require_all3_positive", False) and not g.get("all3_pos"):
+        ok = False
+    elif g.get("all3_pos"):
+        notes.append("近 3 個月每月年增皆為正")
     if rev is None or rev < gp.get("min_month_rev_k", 100000):
         ok = False
     if gp.get("exclude_op_loss", True) and c.get("op_income") is not None and c["op_income"] < 0:
         ok = False
     if hi:
         notes.append("最新月營收創近 12 個月新高")
+    elif gp.get("require_high12", False):
+        ok = False
     rank = min(a3, cap) + (min(acc, cap) if acc is not None else 0) + (20 if hi else 0)
     return ok, round(rank, 1), notes
 
@@ -271,7 +279,7 @@ def build(raw_companies, cfg, generated_at, themes=None, products=None, heat=Non
             },
             "rev_hot": (c.get("rev_streak") or 0) >= cfg.get("revenue_streak", {}).get("min_months", 2),
             **dict(zip(("potential", "potential_rank", "potential_notes"), growth_potential(c, cfg))),
-            "growth": {k: (c.get("growth") or {}).get(k) for k in ("avg3_yoy", "prev3_yoy", "accel", "high12", "months", "hist")},
+            "growth": {k: (c.get("growth") or {}).get(k) for k in ("avg3_yoy", "prev3_yoy", "accel", "all3_pos", "high12", "months", "hist")},
             "period": period,
             "metrics": {k: round(v, 2) for k, v in metrics.items()},
             "subs": {k: round(v) for k, v in subs.items()},
