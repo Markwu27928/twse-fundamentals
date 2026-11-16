@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>台股財報評分</title>
+<style>
+:root{
+  --bg:#f6f7f9;--card:#fff;--text:#1a1d21;--muted:#6b7380;--line:#e3e6ea;--accent:#2457d6;
+  --buy:#d4333b;--buy-bg:#fdecec;--sell:#16864a;--sell-bg:#e8f6ee;--hold:#5b6573;--hold-bg:#eceff3;--na:#8a93a0;--na-bg:#f0f1f3;
+}
+@media (prefers-color-scheme:dark){
+  :root{--bg:#0f1114;--card:#181b20;--text:#e8eaed;--muted:#98a1ae;--line:#2a2f37;--accent:#7aa2ff;
+  --buy:#ff7b81;--buy-bg:#3a1b1d;--sell:#5fd392;--sell-bg:#14301f;--hold:#aab3c0;--hold-bg:#262b33;--na:#8a93a0;--na-bg:#22262c}
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 -apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;padding-bottom:env(safe-area-inset-bottom)}
+.wrap{max-width:720px;margin:0 auto;padding:12px 12px 40px}
+h1{font-size:18px;margin:6px 0 2px}
+.sub{color:var(--muted);font-size:12px;margin-bottom:10px}
+.seg{display:flex;background:var(--hold-bg);border-radius:10px;padding:3px;gap:3px;margin:8px 0}
+.seg button{flex:1;border:0;background:transparent;color:var(--muted);padding:9px 6px;border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.controls{display:grid;gap:8px;margin:8px 0}
+.row{display:flex;gap:8px}
+input[type=search],select{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);font:inherit}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:999px;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer}
+.chip[aria-pressed=true]{border-color:var(--accent);color:var(--accent);font-weight:700}
+.count{color:var(--muted);font-size:12px;margin:6px 2px}
+details.co{background:var(--card);border:1px solid var(--line);border-radius:12px;margin:8px 0;overflow:hidden}
+details.co>summary{list-style:none;display:flex;align-items:center;gap:10px;padding:11px 12px;cursor:pointer}
+details.co>summary::-webkit-details-marker{display:none}
+.rank{width:22px;height:22px;border-radius:50%;background:var(--hold-bg);color:var(--muted);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}
+.main{flex:1;min-width:0}
+.nm{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nm small{color:var(--muted);font-weight:400;margin-left:6px}
+.meta{color:var(--muted);font-size:12px}
+.badge{font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;flex:none}
+.l-買進{color:var(--buy);background:var(--buy-bg)}
+.l-賣出{color:var(--sell);background:var(--sell-bg)}
+.l-觀望{color:var(--hold);background:var(--hold-bg)}
+.l-資料不足{color:var(--na);background:var(--na-bg)}
+.score{width:38px;text-align:right;font-weight:800;font-size:18px;flex:none}
+.body{padding:2px 12px 12px;border-top:1px solid var(--line)}
+.body h4{margin:12px 0 6px;font-size:13px;color:var(--muted)}
+.m{display:grid;grid-template-columns:96px 1fr 62px;gap:8px;align-items:center;font-size:13px;margin:5px 0}
+.bar{height:7px;background:var(--hold-bg);border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.m b{text-align:right;font-weight:600}
+ul.pts{margin:4px 0;padding-left:18px;font-size:13px}
+.flag{color:var(--buy)}
+.ind{margin:18px 2px 4px;font-size:15px;font-weight:800}
+button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);background:var(--card);color:var(--accent);border-radius:10px;font:inherit;font-weight:600}
+.foot{color:var(--muted);font-size:12px;margin-top:20px;line-height:1.6}
+.err{padding:16px;border:1px solid var(--buy);border-radius:10px;background:var(--buy-bg);color:var(--buy)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>台股財報評分</h1>
+  <div class="sub" id="sub">載入中…</div>
+
+  <div class="seg" role="group" aria-label="檢視方式">
+    <button id="v-all" aria-pressed="true">全市場</button>
+    <button id="v-top" aria-pressed="false">各產業前三名</button>
+  </div>
+
+  <div id="ctl-all" class="controls">
+    <input type="search" id="q" placeholder="搜尋代號或名稱" aria-label="搜尋">
+    <div class="chips" id="chips"></div>
+    <div class="row">
+      <select id="ind" aria-label="產業"></select>
+      <select id="sort" aria-label="排序">
+        <option value="score">依評分</option>
+        <option value="mcap">依市值</option>
+        <option value="rev_yoy">依營收年增</option>
+        <option value="pe">依本益比（低到高）</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="ctl-top" class="controls" hidden>
+    <div class="seg" role="group" aria-label="排名依據">
+      <button id="r-score" aria-pressed="true">依評分</button>
+      <button id="r-mcap" aria-pressed="false">依市值</button>
+    </div>
+  </div>
+
+  <div class="count" id="count"></div>
+  <div id="list"></div>
+  <div class="foot">
+    評分為依設定檔規則計算的財報體質分數，並非預測股價漲跌，也不構成投資建議。<br>
+    標籤顏色採台股習慣：買進為紅、賣出為綠。<br>
+    ROE 以累計淨利年化估算；金融業財報格式不同，目前只用估值與營收指標評分（資料涵蓋度較低）。
+  </div>
+</div>
+
+<script>
+const PAGE = 100;
+const LABELS = ["全部", "買進", "觀望", "賣出", "資料不足"];
+const st = { view: "all", label: "全部", ind: "全部", sort: "score", q: "", rankBy: "score", limit: PAGE };
+let D = null, BY = {};
+
+const $ = (id) => document.getElementById(id);
+function h(tag, attrs, ...kids) {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === "class") el.className = v;
+    else if (k === "style") el.setAttribute("style", v);
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v);
+  }
+  for (const k of kids.flat()) if (k != null) el.append(k.nodeType ? k : document.createTextNode(String(k)));
+  return el;
+}
+const fmtMcap = (v) => v == null ? "—" : v >= 10000 ? (v / 10000).toFixed(2) + "兆" : Math.round(v).toLocaleString() + "億";
+const fmtNum = (v, d = 1) => v == null ? "—" : Number(v).toFixed(d);
+
+function card(c, rank) {
+  const sum = h("summary", {},
+    rank ? h("span", { class: "rank" }, rank) : null,
+    h("div", { class: "main" },
+      h("div", { class: "nm" }, c.name, h("small", {}, c.code)),
+      h("div", { class: "meta" }, `${c.industry}・${c.market}・市值 ${fmtMcap(c.mcap)}` +
+        (c.label !== "資料不足" && c.coverage < 0.7 ? "・資料涵蓋度低" : ""))),
+    h("span", { class: "badge l-" + c.label }, c.label),
+    h("span", { class: "score" }, c.score == null ? "—" : Math.round(c.score)));
+
+  const body = h("div", { class: "body" });
+  const keys = Object.keys(D.metric_labels).filter((k) => c.metrics[k] != null);
+  body.append(h("h4", {}, `指標明細（資料期間 ${c.period || "—"}，涵蓋度 ${Math.round(c.coverage * 100)}%）`));
+  if (!keys.length) body.append(h("div", { class: "meta" }, "沒有可用的指標資料"));
+  for (const k of keys) {
+    const ml = D.metric_labels[k], v = c.metrics[k];
+    const shown = (k === "pe" && v >= 999) ? "虧損" : fmtNum(v) + ml.unit;
+    body.append(h("div", { class: "m" },
+      h("span", {}, ml.label),
+      h("div", { class: "bar" }, h("i", { style: `width:${c.subs[k] ?? 0}%` })),
+      h("b", {}, shown)));
+  }
+  if (c.strengths.length) body.append(h("h4", {}, "優勢"), h("ul", { class: "pts" }, c.strengths.map((t) => h("li", {}, t))));
+  if (c.weaknesses.length) body.append(h("h4", {}, "弱點"), h("ul", { class: "pts" }, c.weaknesses.map((t) => h("li", {}, t))));
+  if (c.flags.length) body.append(h("h4", {}, "風險旗標"), h("ul", { class: "pts flag" }, c.flags.map((t) => h("li", {}, t))));
+  return h("details", { class: "co" }, sum, body);
+}
+
+function sortVal(c, key) {
+  if (key === "pe") { const v = c.metrics.pe; return v == null || v >= 999 ? Infinity : v; }
+  if (key === "rev_yoy") return -(c.metrics.rev_yoy ?? -Infinity);
+  if (key === "mcap") return -(c.mcap ?? -1);
+  return -(c.score ?? -1);
+}
+
+function renderAll() {
+  const q = st.q.trim().toLowerCase();
+  let rows = D.companies.filter((c) =>
+    (st.label === "全部" || c.label === st.label) &&
+    (st.ind === "全部" || c.industry === st.ind) &&
+    (!q || c.code.includes(q) || c.name.toLowerCase().includes(q)));
+  rows.sort((a, b) => sortVal(a, st.sort) - sortVal(b, st.sort) || a.code.localeCompare(b.code));
+  $("count").textContent = `共 ${rows.length} 檔`;
+  const list = $("list"); list.replaceChildren();
+  rows.slice(0, st.limit).forEach((c) => list.append(card(c)));
+  if (rows.length > st.limit)
+    list.append(h("button", { class: "more", onclick: () => { st.limit += PAGE; renderAll(); } }, `顯示更多（還有 ${rows.length - st.limit} 檔）`));
+}
+
+function renderTop() {
+  const src = D.top[st.rankBy];
+  const by = st.rankBy === "score" ? "評分" : "市值";
+  $("count").textContent = `各產業${by}前三名（共 ${D.industries.length} 個產業）`;
+  const list = $("list"); list.replaceChildren();
+  for (const ind of D.industries) {
+    const codes = src[ind] || [];
+    if (!codes.length) continue;
+    list.append(h("div", { class: "ind" }, ind));
+    codes.forEach((code, i) => list.append(card(BY[code], i + 1)));
+  }
+}
+
+function render() {
+  $("ctl-all").hidden = st.view !== "all";
+  $("ctl-top").hidden = st.view !== "top";
+  $("v-all").setAttribute("aria-pressed", st.view === "all");
+  $("v-top").setAttribute("aria-pressed", st.view === "top");
+  $("r-score").setAttribute("aria-pressed", st.rankBy === "score");
+  $("r-mcap").setAttribute("aria-pressed", st.rankBy === "mcap");
+  document.querySelectorAll("#chips .chip").forEach((b) => b.setAttribute("aria-pressed", b.dataset.l === st.label));
+  st.view === "all" ? renderAll() : renderTop();
+}
+
+async function init() {
+  try {
+    const r = await fetch("data.json", { cache: "no-cache" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    D = await r.json();
+  } catch (e) {
+    $("sub").textContent = "";
+    $("list").append(h("div", { class: "err" }, "資料載入失敗：" + e.message));
+    return;
+  }
+  D.companies.forEach((c) => (BY[c.code] = c));
+  const d = new Date(D.generated_at);
+  const cnt = D.counts;
+  $("sub").textContent = `更新：${isNaN(d) ? D.generated_at : d.toLocaleString("zh-TW", { hour12: false })}｜買進 ${cnt["買進"] || 0}・觀望 ${cnt["觀望"] || 0}・賣出 ${cnt["賣出"] || 0}`;
+
+  $("chips").append(...LABELS.map((l) => h("button", { class: "chip", "data-l": l, onclick: () => { st.label = l; st.limit = PAGE; render(); } }, l)));
+  $("ind").append(h("option", { value: "全部" }, "全部產業"), ...D.industries.map((i) => h("option", { value: i }, i)));
+  $("ind").onchange = (e) => { st.ind = e.target.value; st.limit = PAGE; render(); };
+  $("sort").onchange = (e) => { st.sort = e.target.value; st.limit = PAGE; render(); };
+  $("q").oninput = (e) => { st.q = e.target.value; st.limit = PAGE; render(); };
+  $("v-all").onclick = () => { st.view = "all"; render(); };
+  $("v-top").onclick = () => { st.view = "top"; render(); };
+  $("r-score").onclick = () => { st.rankBy = "score"; render(); };
+  $("r-mcap").onclick = () => { st.rankBy = "mcap"; render(); };
+  render();
+}
+init();
+</script>
+</body>
+</html>
