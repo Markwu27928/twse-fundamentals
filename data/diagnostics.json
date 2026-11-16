@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-11-16T15:41:47+00:00",
+ "generated_at": "2026-11-16T15:48:29+00:00",
  "errors": [],
  "markets": {
   "上市": {
@@ -1221,6 +1221,34 @@
     "rev_yoy": {
      "source": "revenue",
      "matched_key": "累計營業收入-前期比較增減(%)",
+     "filled": 1083,
+     "base": 1083,
+     "rate": 1.0
+    },
+    "rev_month": {
+     "source": "revenue",
+     "matched_key": "資料年月",
+     "filled": 1083,
+     "base": 1083,
+     "rate": 1.0
+    },
+    "rev_mom": {
+     "source": "revenue",
+     "matched_key": "營業收入-上月比較增減(%)",
+     "filled": 1080,
+     "base": 1083,
+     "rate": 0.997
+    },
+    "rev_yoy_m": {
+     "source": "revenue",
+     "matched_key": "營業收入-去年同月增減(%)",
+     "filled": 1079,
+     "base": 1083,
+     "rate": 0.996
+    },
+    "rev_cur": {
+     "source": "revenue",
+     "matched_key": "營業收入-當月營收",
      "filled": 1083,
      "base": 1083,
      "rate": 1.0
@@ -2563,6 +2591,34 @@
      "base": 898,
      "rate": 0.998
     },
+    "rev_month": {
+     "source": "revenue",
+     "matched_key": "資料年月",
+     "filled": 898,
+     "base": 898,
+     "rate": 1.0
+    },
+    "rev_mom": {
+     "source": "revenue",
+     "matched_key": "營業收入-上月比較增減(%)",
+     "filled": 894,
+     "base": 898,
+     "rate": 0.996
+    },
+    "rev_yoy_m": {
+     "source": "revenue",
+     "matched_key": "營業收入-去年同月增減(%)",
+     "filled": 893,
+     "base": 898,
+     "rate": 0.994
+    },
+    "rev_cur": {
+     "source": "revenue",
+     "matched_key": "營業收入-當月營收",
+     "filled": 898,
+     "base": 898,
+     "rate": 1.0
+    },
     "pe": {
      "source": "valuation",
      "matched_key": "PriceEarningRatio",
@@ -2669,6 +2725,7 @@
     "8097 常珵",
     "8171 天宇"
    ]
-  }
+  },
+  "monthly_revenue": "202610 開放資料 1976 家；202609 觀測站補抓 1985 家（sii_0:997筆(mopsov.twse.com.tw)；sii_1:93筆(mopsov.twse.com.tw)；otc_0:868筆(mopsov.twse.com.tw)；otc_1:30筆(mopsov.twse.com.tw)）；有上月資料 1978 家、連兩月以上成長 338 家"
  }
 }
