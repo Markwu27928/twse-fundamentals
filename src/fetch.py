@@ -49,6 +49,11 @@ SOURCES = {
         "price": f"{TPEX}/tpex_mainboard_daily_close_quotes",
     },
 }
+# 證交所開放資料（openapi）的股價、估值有時落後數個交易日；以證交所網站盤後資料當備援，取日期較新者
+TWSE_RWD = {
+    "price": "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?response=json",
+    "valuation": "https://www.twse.com.tw/rwd/zh/afterTrading/BWIBBU_d?response=json&selectType=ALL",
+}
 REQUIRED = {"basic", "income"}
 MIN_COMPANIES = 500  # 低於此數量視為資料異常，不覆蓋舊資料
 
@@ -80,6 +85,7 @@ F = {
     "price": ["ClosingPrice", "Close", "收盤價"],
     "trade_value": ["TradeValue", "TransactionAmount", "成交金額"],
     "change": ["Change", "漲跌價差"],
+    "dividend_year": ["股利年度"],
 }
 # 每個欄位來自哪個來源（診斷用）
 FIELD_SOURCE = {
@@ -162,6 +168,23 @@ def fetch_json(url, retries=4):
             last = e
             time.sleep(3 * (i + 1))
     raise RuntimeError(f"{url} 抓取失敗：{last}")
+
+
+def fetch_twse_rwd(url):
+    """證交所網站盤後 JSON（fields + data）轉成與開放資料相同的「每列一個 dict」，Date 用民國年。"""
+    r = requests.get(url, headers={"User-Agent": "Mozilla/5.0 (fundamentals-bot)"}, timeout=90)
+    r.raise_for_status()
+    j = r.json()
+    if j.get("stat") not in (None, "OK") or not j.get("data"):
+        raise RuntimeError(f"無資料：{j.get('stat')}")
+    d = str(j.get("date", ""))
+    roc = f"{int(d[:4]) - 1911}{d[4:]}" if re.fullmatch(r"\d{8}", d) else d
+    return [dict(zip(j["fields"], row), Date=roc) for row in j["data"]]
+
+
+def latest_date(rows):
+    ds = [str(r.get("Date", "")) for r in rows[:50] if r.get("Date")]
+    return max(ds) if ds else ""
 
 
 def clean_code(v):
@@ -299,6 +322,10 @@ def diagnose(raw, companies):
                 m["sources"][s]["matched_companies"] = hit
                 if hit == 0:
                     errors.append(f"{market}/{s}：{len(src[s])} 筆資料，但沒有任何一筆對到公司代號（代號欄位對應錯誤）")
+        chs = [c["change"] for c in cs if c.get("change") is not None]
+        m["change_sign"] = {"up": sum(x > 0 for x in chs), "down": sum(x < 0 for x in chs), "flat": sum(x == 0 for x in chs)}
+        if len(chs) > 200 and m["change_sign"]["down"] == 0:
+            errors.append(f"{market}/change：{len(chs)} 筆漲跌沒有任何負值，漲跌欄位可能缺少正負號")
         fmts = {}
         for c in cs:
             fmts[c.get("fs_format") or "無財報"] = fmts.get(c.get("fs_format") or "無財報", 0) + 1
@@ -336,8 +363,24 @@ def main():
                 print(f"[警告] 選用來源失敗，略過：{e}", file=sys.stderr)
                 raw[market][name] = []
 
+    chosen = {}
+    for name, url in TWSE_RWD.items():
+        try:
+            alt = fetch_twse_rwd(url)
+            a_date, o_date = latest_date(alt), latest_date(raw["上市"].get(name, []))
+            print(f"[比較] 上市/{name}：開放資料 {o_date or '無'}，網站盤後 {a_date}（{len(alt)} 筆）")
+            if a_date > o_date:
+                raw["上市"][name] = alt
+                chosen[name] = f"網站盤後 {a_date}"
+            else:
+                chosen[name] = f"開放資料 {o_date}"
+        except Exception as e:  # noqa: BLE001
+            chosen[name] = f"開放資料（備援失敗：{e}）"
+            print(f"[警告] 上市/{name} 備援來源失敗，沿用開放資料：{e}", file=sys.stderr)
+
     companies = build_companies(raw)
     report, errors = diagnose(raw, companies)
+    report["上市"]["twse_source"] = chosen
     print_report(report, errors)
     DIAG.parent.mkdir(parents=True, exist_ok=True)
     DIAG.write_text(json.dumps({
