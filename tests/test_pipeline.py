@@ -62,6 +62,13 @@ def test_parse(raw):
         r["StockNo"] = r.pop("SecuritiesCompanyCode")
     _, errs3 = fetch.diagnose(bad2, fetch.build_companies(bad2))
     check("欄位檢查：代號欄位對不上時會報錯", any("valuation" in e for e in errs3), str(errs3[:1]))
+    prev = [{"code": "9999", "fs_format": "ci", "year": "115", "season": 2, "net_income": 5.0, "equity": 50.0, "revenue": 9.0},
+            {"code": "1102", "fs_format": "ci", "year": "115", "season": 2, "net_income": 1.0, "equity": 1.0}]
+    cur = [dict(c) for c in cs if c["code"] in ("9999", "1102")]
+    n = fetch.carry_forward(cur, prev)
+    by = {c["code"]: c for c in cur}
+    check("缺財報時沿用上一次財報並標記", n == 1 and by["9999"]["stale"] and by["9999"]["net_income"] == 5.0 and by["9999"]["season"] == 2)
+    check("本次有財報時不被舊資料覆蓋", not by["1102"].get("stale") and by["1102"]["season"] != 2)
     return cs
 
 
@@ -74,11 +81,19 @@ def test_archetypes():
                                                        net_income=None, total_assets=None, cur_assets=None,
                                                        rev_yoy=None, pe=None, pb=None, dy=None), CFG)
     check("全缺資料 → 資料不足", label == "資料不足" and s is None)
-    fin = dict(c, revenue=None, gross_profit=None, op_income=None, equity=None, net_income=None, total_assets=None,
-               total_liab=None, cur_assets=None, cur_liab=None, industry="17")
-    _, _, s, label, cov, *_ = score.score_company(fin, CFG)
-    check("金融業（僅估值＋營收）仍可評分，涵蓋度低", s is not None and 0.4 <= cov < 0.7, f"(cov={cov:.2f}, {label})")
-    check("涵蓋度不足時不給買進（最高觀望）", label != "買進" and s >= CFG["buy_above"], f"(分數 {s and round(s,1)}，{label})")
+    fin = dict(c, industry="17", fs_format="basi", revenue=None, gross_profit=None, op_income=None,
+               total_liab=9.3e7, cur_assets=None, cur_liab=None)
+    m, _, s, label, cov, flags, *_ = score.score_company(fin, CFG)
+    check("金融業不評負債比、流動比、毛利率", not ({"debt_ratio", "current_ratio", "gross_margin"} & set(m)), str(sorted(m)))
+    check("金融業負債比 93% 不觸發風險旗標", not flags, str(flags))
+    check("金融業涵蓋度只計適用指標（可達 100%）", cov == 1.0, f"(cov={cov:.2f}, {label})")
+    nost = dict(c, revenue=None, gross_profit=None, op_income=None, net_income=None, eps=None, equity=None,
+                total_assets=None, total_liab=None, cur_assets=None, cur_liab=None)
+    _, _, s, label, cov, *_ = score.score_company(nost, CFG)
+    check("沒有財報、只有估值 → 資料不足", label == "資料不足" and s is None, f"(cov={cov:.2f})")
+    thin = dict(c, gross_profit=None, op_income=None, pe=None, pb=None, dy=None)
+    _, _, s, label, cov, *_ = score.score_company(thin, CFG)
+    check("涵蓋度不足時不給買進（最高觀望）", label != "買進" and cov < CFG["buy_min_coverage"], f"(分數 {s and round(s,1)}，cov={cov:.2f}，{label})")
 
 
 def test_score_and_rank(cs):

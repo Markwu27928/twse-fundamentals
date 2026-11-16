@@ -1,7 +1,7 @@
 {
   "_說明": "評分規則設定檔。每個指標：bad 得 0 分、good 得 100 分，中間線性內插；bad 大於 good 代表越低越好。weight 為權重，缺資料的指標會自動略過並重新配分。",
-  "buy_above": 70,
-  "sell_below": 40,
+  "buy_above": 80,
+  "sell_below": 35,
   "min_coverage": 0.4,
   "buy_min_coverage": 0.7,
   "red_flags": {

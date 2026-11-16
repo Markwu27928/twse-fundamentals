@@ -237,6 +237,26 @@ def build_companies(raw):
     return companies
 
 
+STATEMENT_FIELDS = ["fs_format", "year", "season", "revenue", "gross_profit", "op_income", "net_income", "eps",
+                    "total_assets", "total_liab", "cur_assets", "cur_liab", "equity"]
+
+
+def carry_forward(companies, previous):
+    """本次開放資料缺財報的公司，沿用上一次抓到的財報（標記 stale）。回傳沿用家數。"""
+    prev = {p["code"]: p for p in previous}
+    n = 0
+    for c in companies:
+        if c.get("fs_format"):
+            continue
+        p = prev.get(c["code"])
+        if p and p.get("fs_format") and (p.get("net_income") is not None or p.get("equity") is not None):
+            for k in STATEMENT_FIELDS:
+                c[k] = p.get(k)
+            c["stale"] = True
+            n += 1
+    return n
+
+
 def diagnose(raw, companies):
     """各來源實際欄位與各欄位填值比例；回傳 (報告, 錯誤清單)。"""
     report, errors = {}, []
@@ -325,6 +345,12 @@ def main():
 
     for c in companies:
         c.pop("_has", None)
+    if OUT.exists():
+        try:
+            prev = json.loads(OUT.read_text(encoding="utf-8"))["companies"]
+            print(f"缺財報、沿用上一次資料：{carry_forward(companies, prev)} 家")
+        except (ValueError, KeyError) as e:
+            print(f"[警告] 讀取上一次資料失敗，不沿用：{e}", file=sys.stderr)
     tmp = OUT.with_suffix(".tmp")
     tmp.write_text(json.dumps({
         "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),

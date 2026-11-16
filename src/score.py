@@ -65,9 +65,18 @@ def fmt_metric(key, v, mc):
     return f"{mc['label']}：{v:.1f}{mc['unit']}"
 
 
+NOT_FOR_FIN = {"gross_margin", "op_margin", "debt_ratio", "current_ratio"}
+
+
+def has_statement(c):
+    return c.get("net_income") is not None or c.get("equity") is not None
+
+
 def score_company(c, cfg):
     metrics = derive(c)
-    total_w = sum(mc["weight"] for mc in cfg["metrics"])
+    fin = is_financial(c)
+    # 涵蓋度只計算「適用」的指標：金融業不適用毛利率、營益率、負債比、流動比
+    total_w = sum(mc["weight"] for mc in cfg["metrics"] if not (fin and mc["key"] in NOT_FOR_FIN))
     got, acc, subs = 0.0, 0.0, {}
     for mc in cfg["metrics"]:
         v = metrics.get(mc["key"])
@@ -90,7 +99,8 @@ def score_company(c, cfg):
     if dmax is not None and metrics.get("debt_ratio", 0) > dmax:
         flags.append(f"負債比偏高（>{dmax}%）")
 
-    if got == 0 or coverage < cfg["min_coverage"]:
+    # 沒有任何財報數字時，不單靠估值給買賣標籤
+    if got == 0 or coverage < cfg["min_coverage"] or not has_statement(c):
         return metrics, subs, None, "資料不足", coverage, flags, [], []
 
     score = acc / got
@@ -134,6 +144,7 @@ def build(raw_companies, cfg, generated_at):
             "price": c.get("price"),
             "price_date": c.get("price_date"),
             "financial": is_financial(c),
+            "stale": bool(c.get("stale")),
             "period": period,
             "metrics": {k: round(v, 2) for k, v in metrics.items()},
             "subs": {k: round(v) for k, v in subs.items()},

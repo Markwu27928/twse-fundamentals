@@ -93,7 +93,8 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
   <div class="foot">
     評分為依設定檔規則計算的財報體質分數，並非預測股價漲跌，也不構成投資建議。<br>
     標籤顏色採台股習慣：買進為紅、賣出為綠。<br>
-    ROE 以累計淨利年化估算；金融業財報格式不同，目前只用估值與營收指標評分（資料涵蓋度較低）。
+    ROE 以累計淨利年化估算。金融業（銀行、金控、證券、保險）不評毛利率、負債比、流動比。<br>
+    資料來源：證交所、櫃買中心開放資料。官方尚未提供財報的公司標示「資料不足」。
   </div>
 </div>
 
@@ -116,6 +117,7 @@ function h(tag, attrs, ...kids) {
   return el;
 }
 const fmtMcap = (v) => v == null ? "—" : v >= 10000 ? (v / 10000).toFixed(2) + "兆" : Math.round(v).toLocaleString() + "億";
+const rocDate = (d) => { const m = /^(\d{3})(\d{2})(\d{2})$/.exec(d || ""); return m ? `${+m[1] + 1911}/${m[2]}/${m[3]}` : "—"; };
 const fmtNum = (v, d = 1) => v == null ? "—" : Number(v).toFixed(d);
 
 function card(c, rank) {
@@ -124,13 +126,15 @@ function card(c, rank) {
     h("div", { class: "main" },
       h("div", { class: "nm" }, c.name, h("small", {}, c.code)),
       h("div", { class: "meta" }, `${c.industry}・${c.market}・市值 ${fmtMcap(c.mcap)}` +
+        (c.stale ? "・沿用前次財報" : "") +
         (c.label !== "資料不足" && c.coverage < 0.7 ? "・資料涵蓋度低" : ""))),
     h("span", { class: "badge l-" + c.label }, c.label),
     h("span", { class: "score" }, c.score == null ? "—" : Math.round(c.score)));
 
   const body = h("div", { class: "body" });
   const keys = Object.keys(D.metric_labels).filter((k) => c.metrics[k] != null);
-  body.append(h("h4", {}, `指標明細（資料期間 ${c.period || "—"}，涵蓋度 ${Math.round(c.coverage * 100)}%）`));
+  body.append(h("h4", {}, `指標明細（財報 ${c.period || "—"}${c.stale ? "，本次官方資料未提供，沿用前次" : ""}；股價 ${rocDate(c.price_date)}；涵蓋度 ${Math.round(c.coverage * 100)}%）`));
+  if (c.label === "資料不足") body.append(h("div", { class: "meta" }, "官方開放資料尚未提供此公司財報，暫不給買賣標籤。"));
   if (!keys.length) body.append(h("div", { class: "meta" }, "沒有可用的指標資料"));
   for (const k of keys) {
     const ml = D.metric_labels[k], v = c.metrics[k];
