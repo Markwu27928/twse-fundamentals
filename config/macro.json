@@ -1,7 +1,7 @@
 {
   "_說明": "匯率與外資判讀設定。外資買賣超以『近 days 個交易日累計』比較門檻（單位：億元）；匯率以約 7 個日曆天的變動幅度比較門檻（單位：%）。數字越小越敏感。",
   "days": 5,
-  "foreign_threshold_100m": 300,
+  "foreign_threshold_100m": 500,
   "fx_window_calendar_days": 7,
   "fx_threshold_pct": 0.5
 }
