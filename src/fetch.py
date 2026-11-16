@@ -18,9 +18,12 @@ import time
 
 import requests
 
+import monthly
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "companies.json"
 DIAG = ROOT / "data" / "diagnostics.json"
+REV_HIST = ROOT / "data" / "revenue_history.json"
 
 TWSE = "https://openapi.twse.com.tw/v1"
 TPEX = "https://www.tpex.org.tw/openapi/v1"
@@ -85,6 +88,10 @@ F = {
     "equity": ["權益總額", "權益總計", "TotalEquity"],
     "rev_yoy": ["累計營業收入-前期比較增減(%)", "累計營業收入-前期比較增減",
                 "營業收入-去年同月增減(%)", "營業收入-去年同月增減"],
+    "rev_month": ["資料年月"],
+    "rev_mom": ["營業收入-上月比較增減(%)", "營業收入-上月比較增減"],
+    "rev_yoy_m": ["營業收入-去年同月增減(%)", "營業收入-去年同月增減"],
+    "rev_cur": ["營業收入-當月營收"],
     "pe": ["PEratio", "PriceEarningRatio", "本益比"],
     "pb": ["PBratio", "PriceBookRatio", "股價淨值比"],
     "dy": ["DividendYield", "YieldRatio", "殖利率(%)", "殖利率"],
@@ -99,11 +106,12 @@ FIELD_SOURCE = {
     "op_income": "income", "net_income": "income", "eps": "income",
     "total_assets": "balance", "total_liab": "balance", "cur_assets": "balance",
     "cur_liab": "balance", "equity": "balance",
-    "rev_yoy": "revenue", "pe": "valuation", "pb": "valuation", "dy": "valuation", "price": "price",
+    "rev_yoy": "revenue", "rev_month": "revenue", "rev_mom": "revenue", "rev_yoy_m": "revenue", "rev_cur": "revenue",
+    "pe": "valuation", "pb": "valuation", "dy": "valuation", "price": "price",
     "trade_value": "price", "change": "price",
 }
 # 關鍵欄位：在「該來源有資料的公司」中，填值比例必須達到此門檻，否則判定欄位對應錯誤
-CRITICAL = {"industry": 0.95, "capital": 0.95, "revenue": 0.9, "net_income": 0.9, "eps": 0.9,
+CRITICAL = {"rev_month": 0.95, "rev_yoy_m": 0.9, "industry": 0.95, "capital": 0.95, "revenue": 0.9, "net_income": 0.9, "eps": 0.9,
             "total_assets": 0.9, "equity": 0.9, "pe": 0.5, "price": 0.8, "trade_value": 0.8}
 
 _FW = str.maketrans({"（": "(", "）": ")", "％": "%", "－": "-", "　": ""})
@@ -296,6 +304,10 @@ def build_companies(raw):
                 "cur_liab": num(pick(a, F["cur_liab"])),
                 "equity": num(pick(a, F["equity"])),
                 "rev_yoy": num(pick(r, F["rev_yoy"])),
+                "rev_month": monthly.parse_open_ym(pick(r, F["rev_month"])),
+                "rev_mom": num(pick(r, F["rev_mom"])),
+                "rev_yoy_m": num(pick(r, F["rev_yoy_m"])),
+                "rev_cur": num(pick(r, F["rev_cur"])),
                 "pe": num(pick(v, F["pe"])),
                 "pb": num(pick(v, F["pb"])),
                 "dy": num(pick(v, F["dy"])),
@@ -322,6 +334,48 @@ def carry_forward(companies, previous):
             c["stale"] = True
             n += 1
     return n
+
+
+def apply_revenue_history(companies, hist):
+    """把歷史中的上個月月增、年增與連續成長月數寫回每家公司。"""
+    for c in companies:
+        ym, h = c.get("rev_month"), hist.get(c["code"], {})
+        p = monthly.prev_ym(ym) if ym else None
+        pv = h.get(p, {}) if p else {}
+        c["rev_prev_month"] = p if pv else None
+        c["rev_prev_mom"] = pv.get("mom")
+        c["rev_prev_yoy"] = pv.get("yoy")
+        c["rev_streak"] = monthly.streak(h, ym) if ym else 0
+
+
+def update_revenue_history(companies):
+    """當月（開放資料）併入歷史；缺上個月就從觀測站補抓。回傳說明文字。"""
+    hist = json.loads(REV_HIST.read_text(encoding="utf-8")) if REV_HIST.exists() else {}
+    by_month = {}
+    for c in companies:
+        if c.get("rev_month"):
+            by_month.setdefault(c["rev_month"], {})[c["code"]] = {"rev": c.get("rev_cur"), "mom": c.get("rev_mom"), "yoy": c.get("rev_yoy_m")}
+    notes = []
+    for ym, rows in by_month.items():
+        notes.append(f"{ym} 開放資料 {monthly.merge(hist, ym, rows)} 家")
+    if by_month:
+        latest = max(by_month, key=lambda k: len(by_month[k]))
+        prev = monthly.prev_ym(latest)
+        have = sum(1 for h in hist.values() if prev in h)
+        if have < 0.8 * len(by_month[latest]):
+            try:
+                rows, src = monthly.fetch_month(prev)
+                notes.append(f"{prev} 觀測站補抓 {monthly.merge(hist, prev, rows)} 家（{src}）")
+            except Exception as e:  # noqa: BLE001
+                notes.append(f"{prev} 觀測站補抓失敗：{e}")
+        else:
+            notes.append(f"{prev} 歷史已有 {have} 家，不需補抓")
+    apply_revenue_history(companies, hist)
+    REV_HIST.write_text(json.dumps(hist, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    s2 = sum(1 for c in companies if c.get("rev_streak", 0) >= 2)
+    with_prev = sum(1 for c in companies if c.get("rev_prev_month"))
+    notes.append(f"有上月資料 {with_prev} 家、連兩月以上成長 {s2} 家")
+    return "；".join(notes)
 
 
 def diagnose(raw, companies):
@@ -442,6 +496,13 @@ def main():
 
     for c in companies:
         c.pop("_has", None)
+    rev_note = update_revenue_history(companies)
+    print("[月營收]", rev_note)
+    report.setdefault("monthly_revenue", rev_note)
+    DIAG.write_text(json.dumps({
+        "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+        "errors": errors, "markets": report,
+    }, ensure_ascii=False, indent=1), encoding="utf-8")
     if OUT.exists():
         try:
             prev = json.loads(OUT.read_text(encoding="utf-8"))["companies"]

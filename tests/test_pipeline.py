@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 import fetch  # noqa: E402
 import score  # noqa: E402
 import fixtures  # noqa: E402
+import monthly  # noqa: E402
 
 CFG = json.loads((ROOT / "config" / "scoring.json").read_text(encoding="utf-8"))
 results = []
@@ -68,8 +69,50 @@ def test_parse(raw):
     n = fetch.carry_forward(cur, prev)
     by = {c["code"]: c for c in cur}
     check("缺財報時沿用上一次財報並標記", n == 1 and by["9999"]["stale"] and by["9999"]["net_income"] == 5.0 and by["9999"]["season"] == 2)
-    check("本次有財報時不被舊資料覆蓋", not by["1102"].get("stale") and by["1102"]["season"] != 2)
+    check("本次有財報時不被舊資料覆蓋", not by["1102"].get("stale") and by["1102"]["net_income"] != 1.0 and by["1102"]["equity"] != 1.0)
     return cs
+
+
+MOPS_HTML = """<html><body><table><tr><th>產業別：半導體業</th></tr></table>
+<table border=1>
+<tr><th rowspan=2>公司代號</th><th rowspan=2>公司名稱</th><th colspan=5>營業收入</th><th colspan=3>累計營業收入</th><th rowspan=2>備註</th></tr>
+<tr><th>當月營收</th><th>上月營收</th><th>去年當月營收</th><th>上月比較增減(%)</th><th>去年同月增減(%)</th>
+<th>當月累計營收</th><th>去年累計營收</th><th>前期比較增減(%)</th></tr>
+<tr><td>2330</td><td>台積電</td><td>330,000,000</td><td>300,000,000</td><td>250,000,000</td><td>10.00</td><td>32.00</td><td>1</td><td>1</td><td>1</td><td>-</td></tr>
+<tr><td>2303</td><td>聯電</td><td>20,000,000</td><td>21,000,000</td><td>19,000,000</td><td>-4.76</td><td>5.26</td><td>1</td><td>1</td><td>1</td><td>-</td></tr>
+<tr><td>合計</td><td></td><td>1</td><td>1</td><td>1</td><td>1</td><td>1</td><td>1</td><td>1</td><td>1</td><td></td></tr>
+</table></body></html>""" + "<!--" + "x" * 6000 + "-->"
+
+
+def test_monthly():
+    rows = monthly.parse_mops_html(MOPS_HTML)
+    check("觀測站彙總表：解析兩層表頭與千分位", rows.get("2330") == {"rev": 330000000.0, "mom": 10.0, "yoy": 32.0} and rows["2303"]["mom"] == -4.76, str(rows))
+    check("觀測站彙總表：排除『合計』等非公司列", set(rows) == {"2330", "2303"})
+    bad = MOPS_HTML.replace("上月比較增減(%)", "環比").replace("去年同月增減(%)", "同比")
+    try:
+        monthly.parse_mops_html(bad)
+        ok = False
+    except RuntimeError:
+        ok = True
+    check("觀測站彙總表：欄位改名時報錯而不是空白通過", ok)
+    check("月份換算：開放資料 11510 → 202610、跨年上一月", monthly.parse_open_ym("11510") == "202610" and monthly.prev_ym("202601") == "202512")
+    h = {}
+    monthly.merge(h, "202610", {"A": {"rev": 1, "mom": 5, "yoy": 10}, "B": {"rev": 1, "mom": 5, "yoy": -1}, "C": {"rev": 1, "mom": 2, "yoy": 3}})
+    monthly.merge(h, "202609", {"A": {"rev": 1, "mom": 1, "yoy": 2}, "B": {"rev": 1, "mom": 9, "yoy": 9}, "C": {"rev": 1, "mom": -1, "yoy": 3}})
+    monthly.merge(h, "202608", {"A": {"rev": 1, "mom": 3, "yoy": 3}})
+    check("連續成長：A 連 3 個月、B 當月年增為負 0、C 上月月增為負只算 1",
+          monthly.streak(h["A"], "202610") == 3 and monthly.streak(h["B"], "202610") == 0 and monthly.streak(h["C"], "202610") == 1)
+    h2 = {"D": {"202610": {"mom": 1, "yoy": 1}, "202608": {"mom": 1, "yoy": 1}}}
+    check("連續成長：月份中斷不能接續計算", monthly.streak(h2["D"], "202610") == 1)
+    for i in range(30):
+        monthly.merge(h, f"20{24 + i // 12}{i % 12 + 1:02d}", {"A": {"rev": 1, "mom": 1, "yoy": 1}})
+    check("歷史：每檔只保留 24 個月", len(h["A"]) == 24)
+    cs = [{"code": "A", "rev_month": "202610"}, {"code": "Z", "rev_month": "202610"}, {"code": "C", "rev_month": None}]
+    hh = {"A": {"202610": {"mom": 5, "yoy": 10}, "202609": {"mom": 1, "yoy": 2}}}
+    import fetch as fe
+    fe.apply_revenue_history(cs, hh)
+    check("寫回公司：上月月增年增與連續月數", cs[0]["rev_prev_month"] == "202609" and cs[0]["rev_prev_mom"] == 1 and cs[0]["rev_streak"] == 2)
+    check("寫回公司：沒有歷史或沒有月份時為 0 且不崩潰", cs[1]["rev_streak"] == 0 and cs[1]["rev_prev_month"] is None and cs[2]["rev_streak"] == 0)
 
 
 def test_archetypes():
@@ -81,6 +124,15 @@ def test_archetypes():
                                                        net_income=None, total_assets=None, cur_assets=None,
                                                        rev_yoy=None, pe=None, pb=None, dy=None), CFG)
     check("全缺資料 → 資料不足", label == "資料不足" and s is None)
+    mid = dict(c, gross_profit=2.0e7, op_income=8e6, net_income=7e6, rev_yoy=8.0, rev_yoy_m=8.0, rev_mom=3.0, pe=20.0, pb=2.2, dy=3.0)
+    _, _, s0, *_ = score.score_company(dict(mid, rev_streak=1), CFG)
+    m2, _, s2, l2, _, _, up2, _ = score.score_company(dict(mid, rev_streak=2), CFG)
+    check("營收連兩月成長：加分並列入優勢第一項", round(s2 - s0, 6) == CFG["revenue_streak"]["bonus"] and up2 and up2[0].startswith("月營收連 2 個月"), f"({s0:.1f}→{s2:.1f}) {up2[:1]}")
+    check("單月營收月增、年增納入評分指標", "rev_mom" in m2 and "rev_yoy_m" in m2)
+    _, _, s9, *_ = score.score_company(dict(c, rev_streak=3, rev_yoy_m=40.0, rev_mom=20.0), CFG)
+    check("加分後分數上限 100", s9 <= 100.0, f"({s9})")
+    _, _, sf, lf, _, ff, _, _ = score.score_company(dict(fixtures.archetypes()[2][0], rev_streak=2), CFG)
+    check("營收連兩月成長但本期虧損：仍不給買進", lf != "買進", f"({lf}, {ff})")
     fin = dict(c, industry="17", fs_format="basi", revenue=None, gross_profit=None, op_income=None,
                total_liab=9.3e7, cur_assets=None, cur_liab=None)
     m, _, s, label, cov, flags, *_ = score.score_company(fin, CFG)
@@ -160,6 +212,7 @@ if __name__ == "__main__":
     test_helpers()
     raw = fixtures.make_raw()
     cs = test_parse(raw)
+    test_monthly()
     test_archetypes()
     out = test_score_and_rank(cs)
     # 把模擬結果留給網頁測試使用

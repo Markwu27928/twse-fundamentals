@@ -47,7 +47,10 @@ def make_raw(n_twse=1100, n_tpex=700, seed=7):
                             "DividendYield": str(round(rng.uniform(0, 8), 2))})
             src["valuation"].append(val)
             # 月營收（含金融業）
-            src["revenue"].append({"公司代號": cid, "累計營業收入-前期比較增減(%)": str(round(rng.uniform(-30, 50), 2))})
+            src["revenue"].append({"公司代號": cid, "資料年月": "11510", "營業收入-當月營收": str(int(rng.uniform(1e4, 1e7))),
+                                   "營業收入-上月比較增減(%)": str(round(rng.uniform(-20, 25), 2)),
+                                   "營業收入-去年同月增減(%)": str(round(rng.uniform(-30, 50), 2)),
+                                   "累計營業收入-前期比較增減(%)": str(round(rng.uniform(-30, 50), 2))})
             if fin:  # 金融業不在 *_ci 端點
                 continue
             rev = rng.uniform(5e5, 5e8)
@@ -84,9 +87,9 @@ def archetypes():
     base = dict(code="9001", name="x", market="上市", industry="24", price=100.0, mcap=500.0,
                 year="114", season=3, revenue=1e8, gross_profit=4.5e7, op_income=2.4e7, net_income=2.0e7,
                 eps=5.0, total_assets=1e8, total_liab=3.5e7, cur_assets=6e7, cur_liab=2.5e7, equity=6.5e7,
-                rev_yoy=25.0, pe=10.0, pb=1.1, dy=6.0)
+                rev_yoy=25.0, rev_yoy_m=30.0, rev_mom=15.0, pe=10.0, pb=1.1, dy=6.0)
     strong = dict(base)
-    weak = dict(base, code="9002", gross_profit=5e6, op_income=-1e7, net_income=-1.5e7, eps=-1.2,
+    weak = dict(base, code="9002", rev_yoy_m=-20.0, rev_mom=-15.0, gross_profit=5e6, op_income=-1e7, net_income=-1.5e7, eps=-1.2,
                 total_liab=9e7, equity=1e7, cur_assets=4e7, cur_liab=8e7, rev_yoy=-25.0, pe=None, pb=5.0, dy=0.0)
     # 高分但本期虧損：不得被標為買進
     flagged = dict(base, code="9003", net_income=-1e6, eps=-0.1, pe=None)

@@ -32,6 +32,17 @@ def main():
     shutil.copy(ROOT / "tests" / "sample_data.json", tmp / "data.json")
     import json
     sample = json.loads((tmp / "data.json").read_text(encoding="utf-8"))
+    # 讓前 5 檔有評分的公司標成「營收連兩月成長」，測試標記與篩選
+    global n_hot_rev
+    hot = [c for c in sample["companies"] if c["score"] is not None][:5]
+    for i, c in enumerate(sample["companies"]):
+        c.setdefault("rev", {"month": "202610", "mom": 3.2, "yoy": 12.5, "prev_month": None, "prev_mom": None, "prev_yoy": None, "streak": 0})
+        c.setdefault("rev_hot", False)
+    for c in hot:
+        c["rev"] = {"month": "202610", "mom": 5.1, "yoy": 22.3, "prev_month": "202609", "prev_mom": 2.4, "prev_yoy": 18.0, "streak": 2}
+        c["rev_hot"] = True
+    sample["counts"]["營收連兩月成長"] = n_hot_rev = sum(1 for c in sample["companies"] if c["rev_hot"])
+    (tmp / "data.json").write_text(json.dumps(sample, ensure_ascii=False), encoding="utf-8")
     global data_has_themes, n_themes
     n_themes = len(sample.get("themes") or {})
     data_has_themes = n_themes > 0
@@ -66,6 +77,19 @@ def main():
         # 顯示更多
         page.click("button.more")
         check("顯示更多後變 200 檔", page.locator("details.co").count() == 200)
+
+        # 營收連兩月成長
+        check("篩選鈕顯示連兩月成長檔數", f"營收連兩月成長 {n_hot_rev}" in page.inner_text("#chip-hi"))
+        page.click("#chip-hi")
+        n = page.locator("details.co").count()
+        tags = page.locator("details.co .hot").count()
+        check("篩選後只剩連兩月成長的股票且都有標記", n == n_hot_rev and tags == n, f"({n}/{n_hot_rev})")
+        page.locator("details.co summary").first.click()
+        body = page.locator("details.co").first.inner_text()
+        check("明細顯示兩個月的月增、年增", "2026/10" in body and "2026/09" in body and "連 2 個月月增、年增皆成長" in body)
+        page.screenshot(path=str(shots / "shot_revhot.png"))
+        page.click("#chip-hi")
+        check("再按一次取消篩選", page.locator("details.co").count() == 100)
 
         # 標籤篩選
         page.click('.chip[data-l="買進"]')

@@ -47,6 +47,10 @@ def derive(c):
         m["current_ratio"] = ca / cl * 100
     if c.get("rev_yoy") is not None:
         m["rev_yoy"] = c["rev_yoy"]
+    if c.get("rev_yoy_m") is not None:
+        m["rev_yoy_m"] = c["rev_yoy_m"]
+    if c.get("rev_mom") is not None:
+        m["rev_mom"] = c["rev_mom"]
     pe, eps = c.get("pe"), c.get("eps")
     if pe is not None and pe > 0:
         m["pe"] = pe
@@ -104,6 +108,11 @@ def score_company(c, cfg):
         return metrics, subs, None, "資料不足", coverage, flags, [], []
 
     score = acc / got
+    rs = cfg.get("revenue_streak", {})
+    streak_n = c.get("rev_streak") or 0
+    hot = streak_n >= rs.get("min_months", 2)
+    if hot:
+        score = min(100.0, score + rs.get("bonus", 0))
     if score <= cfg["sell_below"]:
         label = "賣出"
     elif score >= cfg["buy_above"] and not flags and coverage >= cfg.get("buy_min_coverage", 0):
@@ -114,6 +123,8 @@ def score_company(c, cfg):
     by_key = {mc["key"]: mc for mc in cfg["metrics"]}
     ranked = sorted(subs.items(), key=lambda kv: kv[1], reverse=True)
     strengths = [fmt_metric(k, metrics[k], by_key[k]) for k, s in ranked if s >= 70][:2]
+    if hot:
+        strengths.insert(0, f"月營收連 {streak_n} 個月月增、年增皆成長（加 {rs.get('bonus', 0)} 分）")
     weaknesses = [fmt_metric(k, metrics[k], by_key[k]) for k, s in reversed(ranked) if s <= 30][:2]
     return metrics, subs, score, label, coverage, flags, strengths, weaknesses
 
@@ -218,6 +229,12 @@ def build(raw_companies, cfg, generated_at, themes=None, products=None, heat=Non
             "trade_value": None if c.get("trade_value") is None else round(c["trade_value"] / 1e8, 2),
             "financial": is_financial(c),
             "stale": bool(c.get("stale")),
+            "rev": {
+                "month": c.get("rev_month"), "mom": c.get("rev_mom"), "yoy": c.get("rev_yoy_m"),
+                "prev_month": c.get("rev_prev_month"), "prev_mom": c.get("rev_prev_mom"), "prev_yoy": c.get("rev_prev_yoy"),
+                "streak": c.get("rev_streak") or 0,
+            },
+            "rev_hot": (c.get("rev_streak") or 0) >= cfg.get("revenue_streak", {}).get("min_months", 2),
             "period": period,
             "metrics": {k: round(v, 2) for k, v in metrics.items()},
             "subs": {k: round(v) for k, v in subs.items()},
@@ -240,7 +257,7 @@ def build(raw_companies, cfg, generated_at, themes=None, products=None, heat=Non
     theme_groups = build_themes(out, themes or {})
     hot, pool = build_products(out, products or {}, heat or {})
 
-    counts = {}
+    counts = {"營收連兩月成長": sum(1 for x in out if x["rev_hot"])}
     for x in out:
         counts[x["label"]] = counts.get(x["label"], 0) + 1
     return {
