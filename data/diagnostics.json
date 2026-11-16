@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-11-16T14:40:25+00:00",
+ "generated_at": "2026-11-16T14:46:23+00:00",
  "errors": [],
  "markets": {
   "上市": {
@@ -1042,56 +1042,74 @@
      "matched_companies": 1083
     },
     "valuation": {
-     "rows": 1086,
+     "rows": 1087,
      "keys": [
-      "Date",
-      "Code",
-      "Name",
-      "PEratio",
-      "DividendYield",
-      "PBratio"
+      "證券代號",
+      "證券名稱",
+      "收盤價",
+      "殖利率(%)",
+      "股利年度",
+      "本益比",
+      "股價淨值比",
+      "財報年/季",
+      "Date"
      ],
      "sample": {
-      "Date": "1151113",
-      "Code": "1101",
-      "Name": "台泥",
-      "PEratio": "78.14",
-      "DividendYield": "2.93",
-      "PBratio": "0.88"
+      "證券代號": "1101",
+      "證券名稱": "台泥",
+      "收盤價": "26.45",
+      "殖利率(%)": "3.02",
+      "股利年度": 114,
+      "本益比": "75.57",
+      "股價淨值比": "0.85",
+      "財報年/季": "115/3",
+      "Date": "1151116"
      },
-     "code_key": "Code",
-     "matched_companies": 1086
+     "code_key": "證券代號",
+     "matched_companies": 1087
     },
     "price": {
-     "rows": 1389,
+     "rows": 1390,
      "keys": [
-      "Date",
-      "Code",
-      "Name",
-      "TradeVolume",
-      "TradeValue",
-      "OpeningPrice",
-      "HighestPrice",
-      "LowestPrice",
-      "ClosingPrice",
-      "Change",
-      "Transaction"
+      "證券代號",
+      "證券名稱",
+      "成交股數",
+      "成交筆數",
+      "成交金額",
+      "開盤價",
+      "最高價",
+      "最低價",
+      "收盤價",
+      "漲跌(+/-)",
+      "漲跌價差",
+      "最後揭示買價",
+      "最後揭示買量",
+      "最後揭示賣價",
+      "最後揭示賣量",
+      "本益比",
+      "Date"
      ],
      "sample": {
-      "Date": "1151113",
-      "Code": "00400A",
-      "Name": "主動國泰動能高息",
-      "TradeVolume": "45554747",
-      "TradeValue": "593663444",
-      "OpeningPrice": "13.00",
-      "HighestPrice": "13.26",
-      "LowestPrice": "12.80",
-      "ClosingPrice": "12.86",
-      "Change": "0.2900",
-      "Transaction": "6406"
+      "證券代號": "00400A",
+      "證券名稱": "主動國泰動能高息",
+      "成交股數": "98,028,977",
+      "成交筆數": "21,522",
+      "成交金額": "1,175,741,162",
+      "開盤價": "12.48",
+      "最高價": "12.51",
+      "最低價": "11.73",
+      "收盤價": "11.73",
+      "漲跌(+/-)": "<p style= color:green>-</p>",
+      "漲跌價差": "-1.13",
+      "最後揭示買價": "11.73",
+      "最後揭示買量": "26",
+      "最後揭示賣價": "11.74",
+      "最後揭示賣量": "92",
+      "本益比": "0.00",
+      "Date": "1151116"
      },
-     "code_key": "Code",
-     "matched_companies": 1086
+     "code_key": "證券代號",
+     "matched_companies": 1087
     }
    },
    "fields": {
@@ -1209,48 +1227,53 @@
     },
     "pe": {
      "source": "valuation",
-     "matched_key": "PEratio",
-     "filled": 870,
-     "base": 1086,
-     "rate": 0.801
+     "matched_key": "本益比",
+     "filled": 874,
+     "base": 1087,
+     "rate": 0.804
     },
     "pb": {
      "source": "valuation",
-     "matched_key": "PBratio",
-     "filled": 1086,
-     "base": 1086,
+     "matched_key": "股價淨值比",
+     "filled": 1087,
+     "base": 1087,
      "rate": 1.0
     },
     "dy": {
      "source": "valuation",
-     "matched_key": "DividendYield",
-     "filled": 849,
-     "base": 1086,
-     "rate": 0.782
+     "matched_key": "殖利率(%)",
+     "filled": 1087,
+     "base": 1087,
+     "rate": 1.0
     },
     "price": {
      "source": "price",
-     "matched_key": "ClosingPrice",
-     "filled": 1085,
-     "base": 1086,
-     "rate": 0.999
+     "matched_key": "收盤價",
+     "filled": 1084,
+     "base": 1087,
+     "rate": 0.997
     },
     "trade_value": {
      "source": "price",
-     "matched_key": "TradeValue",
-     "filled": 1086,
-     "base": 1086,
+     "matched_key": "成交金額",
+     "filled": 1087,
+     "base": 1087,
      "rate": 1.0
     },
     "change": {
      "source": "price",
-     "matched_key": "Change",
-     "filled": 1086,
-     "base": 1086,
+     "matched_key": "漲跌價差",
+     "filled": 1087,
+     "base": 1087,
      "rate": 1.0
     }
    },
    "companies": 1089,
+   "change_sign": {
+    "up": 99,
+    "down": 948,
+    "flat": 40
+   },
    "fs_formats": {
     "ci": 1001,
     "無財報": 69,
@@ -1329,7 +1352,11 @@
     "8443 阿瘦",
     "8476 台境*",
     "9938 百和"
-   ]
+   ],
+   "twse_source": {
+    "price": "網站盤後 1151116",
+    "valuation": "網站盤後 1151116"
+   }
   },
   "上櫃": {
    "sources": {
@@ -2580,6 +2607,11 @@
     }
    },
    "companies": 898,
+   "change_sign": {
+    "up": 97,
+    "down": 745,
+    "flat": 35
+   },
    "fs_formats": {
     "ci": 841,
     "無財報": 50,
