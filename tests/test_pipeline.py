@@ -115,6 +115,43 @@ def test_monthly():
     check("寫回公司：沒有歷史或沒有月份時為 0 且不崩潰", cs[1]["rev_streak"] == 0 and cs[1]["rev_prev_month"] is None and cs[2]["rev_streak"] == 0)
 
 
+def mk_hist(yoys, revs=None, start="202610"):
+    seq = monthly.months_back(start, len(yoys))
+    revs = revs or [200000.0] * len(yoys)
+    return {ym: {"rev": r, "mom": 1.0, "yoy": y} for ym, y, r in zip(seq, yoys, revs)}
+
+
+def test_growth():
+    # 近 3 月 30/28/26（平均 28）、前 3 月 10/12/14（平均 12）→ 加速 16
+    h = mk_hist([30, 28, 26, 10, 12, 14, 5, 5, 5, 5, 5, 5], revs=[500000.0] + [200000.0] * 11)
+    g = monthly.growth_profile(h, "202610")
+    check("成長輪廓：近 3 月、前 3 月平均與加速", g["avg3_yoy"] == 28.0 and g["prev3_yoy"] == 12.0 and g["accel"] == 16.0, str({k: g[k] for k in ("avg3_yoy", "prev3_yoy", "accel")}))
+    check("成長輪廓：12 個月新高、近 6 月明細", g["high12"] is True and len(g["hist"]) == 6 and g["hist"][0][0] == "202610")
+    g5 = monthly.growth_profile(mk_hist([30, 28, 26, 10, 12]), "202610")
+    check("成長輪廓：不足 6 個月不算加速、不足 12 個月不判新高", g5["accel"] is None and g5["high12"] is None and g5["avg3_yoy"] == 28.0)
+    gap = mk_hist([30, 28, 26, 10, 12, 14]); del gap["202609"]
+    check("成長輪廓：中間缺月時不算平均", monthly.growth_profile(gap, "202610")["avg3_yoy"] is None)
+
+    base = dict(code="X", rev_cur=500000.0, rev_yoy_m=30.0, op_income=1.0)
+    ok, rank, notes = score.growth_potential(dict(base, growth=g), CFG)
+    check("潛力股：高成長＋加速＋新高 → 符合", ok and "最新月營收創近 12 個月新高" in notes, f"{rank} {notes}")
+    slow = monthly.growth_profile(mk_hist([22, 21, 20, 40, 40, 40]), "202610")
+    check("潛力股：成長高但在減速 → 不符合", not score.growth_potential(dict(base, growth=slow), CFG)[0])
+    low = monthly.growth_profile(mk_hist([10, 9, 8, 1, 1, 1]), "202610")
+    check("潛力股：加速但成長不到 20% → 不符合", not score.growth_potential(dict(base, growth=low), CFG)[0])
+    check("潛力股：月營收不到 1 億 → 不符合（基期過小）", not score.growth_potential(dict(base, rev_cur=50000.0, growth=g), CFG)[0])
+    check("潛力股：本業虧損 → 不符合", not score.growth_potential(dict(base, op_income=-1.0, growth=g), CFG)[0])
+    check("潛力股：最新月份年增轉負 → 不符合", not score.growth_potential(dict(base, rev_yoy_m=-2.0, growth=g), CFG)[0])
+    ok5, _, n5 = score.growth_potential(dict(base, growth=g5), CFG)
+    check("潛力股：歷史不足 6 個月 → 不符合並說明原因", not ok5 and any("資料不足" in x for x in n5), str(n5))
+    ok0, r0, n0 = score.growth_potential(dict(base, growth=None), CFG)
+    check("潛力股：沒有營收歷史 → 不符合、不崩潰", not ok0 and r0 is None)
+    huge = monthly.growth_profile(mk_hist([900, 800, 700, 10, 10, 10]), "202610")
+    _, rh, _ = score.growth_potential(dict(base, growth=huge), CFG)
+    _, rg, _ = score.growth_potential(dict(base, growth=g), CFG)
+    check("潛力排序：極端年增有上限，不會無限放大", rh <= 2 * CFG["growth_potential"]["yoy_cap"] + 20, f"({rh})")
+
+
 def test_archetypes():
     for c, expect in fixtures.archetypes():
         _, _, s, label, cov, flags, up, dn = score.score_company(c, CFG)
@@ -213,6 +250,7 @@ if __name__ == "__main__":
     raw = fixtures.make_raw()
     cs = test_parse(raw)
     test_monthly()
+    test_growth()
     test_archetypes()
     out = test_score_and_rank(cs)
     # 把模擬結果留給網頁測試使用

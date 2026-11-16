@@ -41,6 +41,19 @@ def main():
     for c in hot:
         c["rev"] = {"month": "202610", "mom": 5.1, "yoy": 22.3, "prev_month": "202609", "prev_mom": 2.4, "prev_yoy": 18.0, "streak": 2}
         c["rev_hot"] = True
+    global n_pot
+    pot = [c for c in sample["companies"] if c["score"] is not None][10:13]
+    for c in sample["companies"]:
+        c.setdefault("potential", False); c.setdefault("potential_rank", None); c.setdefault("potential_notes", [])
+        c.setdefault("growth", {"avg3_yoy": None, "prev3_yoy": None, "accel": None, "high12": None, "months": 0, "hist": []})
+    for i, c in enumerate(pot):
+        c["potential"], c["potential_rank"] = True, 100.0 - i * 10
+        c["potential_notes"] = ["近 3 月平均年增 35.0%", "年增加速（前 3 月 12.0% → 近 3 月 35.0%）"]
+        c["growth"] = {"avg3_yoy": 35.0, "prev3_yoy": 12.0, "accel": 23.0, "high12": True, "months": 12,
+                       "hist": [["202610", 523456.0, 4.2, 38.0], ["202609", 502000.0, 3.1, 35.5], ["202608", 487000.0, 2.0, 31.5],
+                                ["202607", 477000.0, 1.0, 14.0], ["202606", 472000.0, -1.0, 12.0], ["202605", 476000.0, 0.5, 10.0]]}
+    sample["counts"]["營收成長潛力"] = n_pot = len(pot)
+    pot_names = [c["name"] for c in pot]
     sample["counts"]["營收連兩月成長"] = n_hot_rev = sum(1 for c in sample["companies"] if c["rev_hot"])
     (tmp / "data.json").write_text(json.dumps(sample, ensure_ascii=False), encoding="utf-8")
     global data_has_themes, n_themes
@@ -91,6 +104,20 @@ def main():
         page.click("#chip-hi")
         check("再按一次取消篩選", page.locator("details.co").count() == 100)
 
+        # 營收成長潛力
+        check("潛力篩選鈕顯示檔數", f"營收成長潛力 {n_pot}" in page.inner_text("#chip-po"))
+        page.click("#chip-po")
+        names = [x.split("\n")[0] for x in page.locator("details.co .nm").all_inner_texts()]
+        check("潛力篩選：只剩潛力股、依潛力排序", page.locator("details.co").count() == n_pot and page.locator("details.co .pot").count() == n_pot
+              and page.input_value("#sort") == "potential", str(names))
+        page.locator("details.co summary").first.click()
+        pb_txt = page.locator("details.co").first.inner_text()
+        check("潛力股明細：判斷理由與近 6 月營收表", "營收成長潛力股" in pb_txt and "年增加速" in pb_txt and "2026/05" in pb_txt and "5.23" in pb_txt, pb_txt[pb_txt.find("近期月營收"):][:120].replace("\n", " "))
+        page.screenshot(path=str(shots / "shot_potential.png"))
+        page.click("#chip-po")
+        page.select_option("#sort", "score")
+        check("取消潛力篩選", page.locator("details.co").count() == 100)
+
         # 標籤篩選
         page.click('.chip[data-l="買進"]')
         n_buy = page.locator("details.co").count()
@@ -100,7 +127,7 @@ def main():
 
         # 產業 + 搜尋
         page.select_option("#ind", "半導體業")
-        inds = set(page.locator("details.co .meta").all_inner_texts())
+        inds = set(page.locator("details.co .main .meta").all_inner_texts())
         check("產業篩選：全部屬於半導體業", all(t.startswith("半導體業") for t in inds) and inds)
         page.select_option("#ind", "全部")
         page.fill("#q", "1101")

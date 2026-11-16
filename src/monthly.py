@@ -150,3 +150,33 @@ def streak(h, latest):
         else:
             break
     return n
+
+
+def months_back(ym, n):
+    """latest 往回 n 個月（含 latest），由新到舊。"""
+    out = [ym]
+    for _ in range(n - 1):
+        out.append(prev_ym(out[-1]))
+    return out
+
+
+def growth_profile(h, latest):
+    """近 3 月／前 3 月平均年增、加速幅度、是否創近 12 個月新高、近 6 個月明細。資料不足的項目為 None。"""
+    seq = months_back(latest, 12)
+    yoy = [h.get(ym, {}).get("yoy") for ym in seq]
+    rev = [h.get(ym, {}).get("rev") for ym in seq]
+
+    def avg(xs):
+        return round(sum(xs) / len(xs), 2) if xs and all(x is not None for x in xs) else None
+
+    a3, p3 = avg(yoy[:3]), avg(yoy[3:6])
+    known = [r for r in rev if r is not None]
+    high12 = None
+    if len(known) == 12 and rev[0] is not None:
+        high12 = rev[0] >= max(rev[1:])
+    return {
+        "avg3_yoy": a3, "prev3_yoy": p3,
+        "accel": round(a3 - p3, 2) if a3 is not None and p3 is not None else None,
+        "high12": high12, "months": len(known),
+        "hist": [[ym, h[ym].get("rev"), h[ym].get("mom"), h[ym].get("yoy")] for ym in seq[:6] if ym in h],
+    }

@@ -140,5 +140,14 @@
     "_說明": "月營收連續 min_months 個月『月增 > 0 且 年增 > 0』列為重點：加 bonus 分（上限 100），網頁顯示標記並可篩選",
     "min_months": 2,
     "bonus": 5
+  },
+  "growth_potential": {
+    "_說明": "營收成長潛力股：以下條件全部符合才列入。營收單位為千元（100000 = 1 億元）。yoy_cap 用來限制極端年增（基期過低）對排序的影響。",
+    "avg3_yoy_min": 20,
+    "require_accel": true,
+    "latest_yoy_min": 0,
+    "min_month_rev_k": 100000,
+    "exclude_op_loss": true,
+    "yoy_cap": 150
   }
 }

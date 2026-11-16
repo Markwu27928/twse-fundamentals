@@ -129,6 +129,41 @@ def score_company(c, cfg):
     return metrics, subs, score, label, coverage, flags, strengths, weaknesses
 
 
+def growth_potential(c, cfg):
+    """營收成長潛力：回傳 (是否符合, 排序分數, 判斷說明清單)。資料不足時不符合，說明會寫出原因。"""
+    gp = cfg.get("growth_potential", {})
+    g = c.get("growth") or {}
+    a3, p3, acc, hi = g.get("avg3_yoy"), g.get("prev3_yoy"), g.get("accel"), g.get("high12")
+    latest_yoy = c.get("rev_yoy_m")
+    rev = c.get("rev_cur")
+    notes, ok = [], True
+    if a3 is None:
+        return False, None, ["近 3 個月營收資料不足"]
+    cap = gp.get("yoy_cap", 150)
+    if a3 >= gp.get("avg3_yoy_min", 20):
+        notes.append(f"近 3 月平均年增 {a3:.1f}%")
+    else:
+        ok = False
+    if gp.get("require_accel", True):
+        if acc is None:
+            ok = False
+            notes.append("前 3 個月資料不足，無法判斷加速")
+        elif acc > 0:
+            notes.append(f"年增加速（前 3 月 {p3:.1f}% → 近 3 月 {a3:.1f}%）")
+        else:
+            ok = False
+    if latest_yoy is None or latest_yoy <= gp.get("latest_yoy_min", 0):
+        ok = False
+    if rev is None or rev < gp.get("min_month_rev_k", 100000):
+        ok = False
+    if gp.get("exclude_op_loss", True) and c.get("op_income") is not None and c["op_income"] < 0:
+        ok = False
+    if hi:
+        notes.append("最新月營收創近 12 個月新高")
+    rank = min(a3, cap) + (min(acc, cap) if acc is not None else 0) + (20 if hi else 0)
+    return ok, round(rank, 1), notes
+
+
 def industry_name(code, cfg):
     names = cfg["industry_names"]
     if code in names:
@@ -235,6 +270,8 @@ def build(raw_companies, cfg, generated_at, themes=None, products=None, heat=Non
                 "streak": c.get("rev_streak") or 0,
             },
             "rev_hot": (c.get("rev_streak") or 0) >= cfg.get("revenue_streak", {}).get("min_months", 2),
+            **dict(zip(("potential", "potential_rank", "potential_notes"), growth_potential(c, cfg))),
+            "growth": {k: (c.get("growth") or {}).get(k) for k in ("avg3_yoy", "prev3_yoy", "accel", "high12", "months", "hist")},
             "period": period,
             "metrics": {k: round(v, 2) for k, v in metrics.items()},
             "subs": {k: round(v) for k, v in subs.items()},
@@ -257,7 +294,7 @@ def build(raw_companies, cfg, generated_at, themes=None, products=None, heat=Non
     theme_groups = build_themes(out, themes or {})
     hot, pool = build_products(out, products or {}, heat or {})
 
-    counts = {"營收連兩月成長": sum(1 for x in out if x["rev_hot"])}
+    counts = {"營收連兩月成長": sum(1 for x in out if x["rev_hot"]), "營收成長潛力": sum(1 for x in out if x["potential"])}
     for x in out:
         counts[x["label"]] = counts.get(x["label"], 0) + 1
     return {

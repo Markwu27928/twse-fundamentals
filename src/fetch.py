@@ -24,6 +24,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "companies.json"
 DIAG = ROOT / "data" / "diagnostics.json"
 REV_HIST = ROOT / "data" / "revenue_history.json"
+BACKFILL_MONTHS = 13
 
 TWSE = "https://openapi.twse.com.tw/v1"
 TPEX = "https://www.tpex.org.tw/openapi/v1"
@@ -346,6 +347,7 @@ def apply_revenue_history(companies, hist):
         c["rev_prev_mom"] = pv.get("mom")
         c["rev_prev_yoy"] = pv.get("yoy")
         c["rev_streak"] = monthly.streak(h, ym) if ym else 0
+        c["growth"] = monthly.growth_profile(h, ym) if ym else None
 
 
 def update_revenue_history(companies):
@@ -360,21 +362,30 @@ def update_revenue_history(companies):
         notes.append(f"{ym} 開放資料 {monthly.merge(hist, ym, rows)} 家")
     if by_month:
         latest = max(by_month, key=lambda k: len(by_month[k]))
-        prev = monthly.prev_ym(latest)
-        have = sum(1 for h in hist.values() if prev in h)
-        if have < 0.8 * len(by_month[latest]):
+        need = 0.8 * len(by_month[latest])
+        filled, skipped = [], 0
+        # 回補近 BACKFILL_MONTHS 個月（成長加速需 6 個月、創新高需 12 個月）
+        for ym in monthly.months_back(latest, BACKFILL_MONTHS + 1)[1:]:
+            have = sum(1 for h in hist.values() if ym in h)
+            if have >= need:
+                skipped += 1
+                continue
             try:
-                rows, src = monthly.fetch_month(prev)
-                notes.append(f"{prev} 觀測站補抓 {monthly.merge(hist, prev, rows)} 家（{src}）")
+                rows, src = monthly.fetch_month(ym)
+                n = monthly.merge(hist, ym, rows)
+                filled.append(f"{ym}:{n}家")
+                if n == 0:
+                    notes.append(f"{ym} 觀測站無資料（{src}）")
             except Exception as e:  # noqa: BLE001
-                notes.append(f"{prev} 觀測站補抓失敗：{e}")
-        else:
-            notes.append(f"{prev} 歷史已有 {have} 家，不需補抓")
+                notes.append(f"{ym} 觀測站補抓失敗：{e}")
+        notes.append(f"觀測站補抓 {len(filled)} 個月（{'、'.join(filled) or '無'}），已有 {skipped} 個月")
     apply_revenue_history(companies, hist)
     REV_HIST.write_text(json.dumps(hist, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     s2 = sum(1 for c in companies if c.get("rev_streak", 0) >= 2)
     with_prev = sum(1 for c in companies if c.get("rev_prev_month"))
-    notes.append(f"有上月資料 {with_prev} 家、連兩月以上成長 {s2} 家")
+    g6 = sum(1 for c in companies if (c.get("growth") or {}).get("accel") is not None)
+    g12 = sum(1 for c in companies if (c.get("growth") or {}).get("high12") is not None)
+    notes.append(f"有上月資料 {with_prev} 家、連兩月以上成長 {s2} 家、可算加速 {g6} 家、可判斷 12 月新高 {g12} 家")
     return "；".join(notes)
 
 

@@ -62,6 +62,9 @@ ul.pts{margin:4px 0;padding-left:18px;font-size:13px}
 .ind-sub{color:var(--muted);font-size:12px;margin:0 2px 4px}
 .hot{display:inline-block;font-size:11px;font-weight:700;color:var(--buy);background:var(--buy-bg);border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:2px}
 .chip.hi[aria-pressed=true]{border-color:var(--buy);color:var(--buy)}
+.pot{display:inline-block;font-size:11px;font-weight:700;color:#8a4b00;background:#fff1d6;border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:2px}
+@media (prefers-color-scheme:dark){.pot{color:#ffc46b;background:#3a2a10}}
+.chip.po[aria-pressed=true]{border-color:#d08700;color:#d08700}
 .revtbl{width:100%;border-collapse:collapse;font-size:13px}
 .revtbl td,.revtbl th{padding:4px 2px;text-align:right;border-bottom:1px solid var(--line)}
 .revtbl td:first-child,.revtbl th:first-child{text-align:left}
@@ -96,6 +99,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
         <option value="score">依評分</option>
         <option value="mcap">依市值</option>
         <option value="rev_yoy">依營收年增</option>
+        <option value="potential">依成長潛力</option>
         <option value="pe">依本益比（低到高）</option>
       </select>
     </div>
@@ -114,6 +118,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
   <div class="foot">
     評分為依設定檔規則計算的財報體質分數，並非預測股價漲跌，也不構成投資建議。<br>
     標籤顏色採台股習慣：買進為紅、賣出為綠。<br>
+    「營收成長潛力」：近 3 月單月營收年增平均 ≥ 20%、比前 3 月加速、最新月年增為正、月營收 ≥ 1 億且本業未虧損（不影響評分，供篩選參考）。<br>
     「營收連兩月成長」：最近兩個月的單月營收，月增率與年增率都大於 0，評分另加分。<br>
     ROE 以累計淨利年化估算。金融業（銀行、金控、證券、保險）不評毛利率、負債比、流動比。<br>
     資料來源：證交所、櫃買中心開放資料。官方尚未提供財報的公司標示「資料不足」。
@@ -123,7 +128,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
 <script>
 const PAGE = 100;
 const LABELS = ["全部", "買進", "觀望", "賣出", "資料不足"];
-const st = { view: "all", hi: false, label: "全部", ind: "全部", sort: "score", q: "", rankBy: "score", theme: "全部", limit: PAGE };
+const st = { view: "all", hi: false, pot: false, label: "全部", ind: "全部", sort: "score", q: "", rankBy: "score", theme: "全部", limit: PAGE };
 let D = null, BY = {};
 
 const $ = (id) => document.getElementById(id);
@@ -146,7 +151,8 @@ function card(c, rank, product) {
   const sum = h("summary", {},
     rank ? h("span", { class: "rank" }, rank) : null,
     h("div", { class: "main" },
-      h("div", { class: "nm" }, c.name, h("small", {}, c.code), c.rev_hot ? h("span", { class: "hot" }, `營收連${c.rev.streak}月↑`) : null),
+      h("div", { class: "nm" }, c.name, h("small", {}, c.code), c.rev_hot ? h("span", { class: "hot" }, `營收連${c.rev.streak}月↑`) : null,
+        c.potential ? h("span", { class: "pot" }, "成長潛力") : null),
       product ? h("div", { class: "prod" }, "主力產品：" + product) : null,
       h("div", { class: "meta" }, `${c.industry}・${c.market}・市值 ${fmtMcap(c.mcap)}` +
         (c.stale ? "・沿用前次財報" : "") +
@@ -167,7 +173,21 @@ function card(c, rank, product) {
       h("div", { class: "bar" }, h("i", { style: `width:${c.subs[k] ?? 0}%` })),
       h("b", {}, shown)));
   }
-  if (c.rev && c.rev.month) {
+  const G = c.growth || {};
+  if (G.hist && G.hist.length >= 3) {
+    const ym = (v) => `${v.slice(0, 4)}/${v.slice(4)}`;
+    const title = [c.potential ? "營收成長潛力股" : null, c.rev_hot ? `連 ${c.rev.streak} 個月月增、年增皆成長` : null].filter(Boolean).join("；");
+    body.append(h("h4", {}, "近期月營收" + (title ? `（${title}）` : "")));
+    if (c.potential_notes && c.potential_notes.length)
+      body.append(h("ul", { class: "pts" }, c.potential_notes.map((t) => h("li", {}, t))));
+    body.append(h("table", { class: "revtbl" },
+      h("tr", {}, h("th", {}, "月份"), h("th", {}, "營收(億)"), h("th", {}, "月增"), h("th", {}, "年增")),
+      G.hist.map(([m, rev, mom, yoy]) => h("tr", {}, h("td", {}, ym(m)), h("td", {}, rev == null ? "—" : (rev / 1e5).toFixed(2)),
+        h("td", {}, pctSpan(mom, 1)), h("td", {}, pctSpan(yoy, 1))))));
+    if (G.avg3_yoy != null) body.append(h("div", { class: "meta", style: "margin-top:4px" },
+      `近 3 月平均年增 ${G.avg3_yoy.toFixed(1)}%` + (G.prev3_yoy != null ? `，前 3 月 ${G.prev3_yoy.toFixed(1)}%` : "") +
+      (G.high12 ? "，最新月營收創近 12 個月新高" : "")));
+  } else if (c.rev && c.rev.month) {
     const ym = (v) => v ? `${v.slice(0, 4)}/${v.slice(4)}` : "—";
     const row = (m, mom, yoy) => h("tr", {}, h("td", {}, ym(m)), h("td", {}, pctSpan(mom, 1)), h("td", {}, pctSpan(yoy, 1)));
     body.append(h("h4", {}, c.rev_hot ? `月營收（連 ${c.rev.streak} 個月月增、年增皆成長）` : "月營收"),
@@ -187,6 +207,7 @@ function sortVal(c, key) {
   if (key === "pe") { const v = c.metrics.pe; return v == null || v >= 999 ? Infinity : v; }
   if (key === "rev_yoy") return -(c.metrics.rev_yoy ?? -Infinity);
   if (key === "mcap") return -(c.mcap ?? -1);
+  if (key === "potential") return -((c.potential ? 1000 : 0) + (c.potential_rank ?? -999));
   return -(c.score ?? -1);
 }
 
@@ -195,6 +216,7 @@ function renderAll() {
   let rows = D.companies.filter((c) =>
     (st.label === "全部" || c.label === st.label) &&
     (!st.hi || c.rev_hot) &&
+    (!st.pot || c.potential) &&
     (st.ind === "全部" || c.industry === st.ind) &&
     (!q || c.code.includes(q) || c.name.toLowerCase().includes(q)));
   rows.sort((a, b) => sortVal(a, st.sort) - sortVal(b, st.sort) || a.code.localeCompare(b.code));
@@ -266,6 +288,7 @@ function render() {
   $("r-mcap").setAttribute("aria-pressed", st.rankBy === "mcap");
   document.querySelectorAll("#chips .chip[data-l]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.l === st.label));
   $("chip-hi").setAttribute("aria-pressed", st.hi);
+  $("chip-po").setAttribute("aria-pressed", st.pot);
   if (st.view === "all") renderAll();
   else if (st.view === "top") renderTop();
   else if (st.view === "theme") renderTheme();
@@ -319,6 +342,7 @@ async function init() {
   const cnt = D.counts;
   $("sub").textContent = `更新：${isNaN(d) ? D.generated_at : d.toLocaleString("zh-TW", { hour12: false })}｜買進 ${cnt["買進"] || 0}・觀望 ${cnt["觀望"] || 0}・賣出 ${cnt["賣出"] || 0}`;
 
+  $("chips").append(h("button", { class: "chip po", id: "chip-po", onclick: () => { st.pot = !st.pot; if (st.pot) { st.sort = "potential"; $("sort").value = "potential"; } st.limit = PAGE; render(); } }, `🚀 營收成長潛力 ${cnt["營收成長潛力"] || 0}`));
   $("chips").append(h("button", { class: "chip hi", id: "chip-hi", onclick: () => { st.hi = !st.hi; st.limit = PAGE; render(); } }, `★ 營收連兩月成長 ${cnt["營收連兩月成長"] || 0}`));
   $("chips").append(...LABELS.map((l) => h("button", { class: "chip", "data-l": l, onclick: () => { st.label = l; st.limit = PAGE; render(); } }, l)));
   $("ind").append(h("option", { value: "全部" }, "全部產業"), ...D.industries.map((i) => h("option", { value: i }, i)));
