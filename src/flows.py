@@ -195,12 +195,15 @@ def parse_inst(j):
         m = map_inst(names)
         if ci is None or not {"foreign", "trust", "dealer"} <= set(m):
             continue
-        data, ok, checked = {}, 0, 0
+        data, ok, checked, excluded = {}, 0, 0, []
         for r in rows:
             if len(r) < len(names):
                 continue
             code = norm(r[ci])
             if not re.fullmatch(r"[1-9]\d{3}", code) or code.startswith("91"):
+                fx = [num(r[i]) for i in m["foreign"]]
+                if code and all(x is not None for x in fx):
+                    excluded.append((code, sum(fx)))
                 continue
             vals = {k: [num(r[i]) for i in idx] for k, idx in m.items()}
             if any(v is None for k in ("foreign", "trust", "dealer") for v in vals[k]):
@@ -217,7 +220,10 @@ def parse_inst(j):
                         good = good and all(x is not None for x in ps) and abs(sum(ps) - whole) <= 1
                 ok += good
         diag = {"fields": names, "map": {k: [names[i] for i in v] for k, v in m.items()}, "rows": len(data),
-                "check": round(ok / checked, 4) if checked else None}
+                "check": round(ok / checked, 4) if checked else None,
+                # 被排除的 ETF、權證、存託憑證：外資買賣超股數合計與前 10 大（用來和市場總計對帳）
+                "excluded_n": len(excluded), "excluded_foreign_shares": sum(x for _, x in excluded),
+                "excluded_top": sorted(excluded, key=lambda x: -abs(x[1]))[:10]}
         if best is None or len(data) > best[1]["rows"]:
             best = (data, diag)
     return best if best else ({}, {"error": "找不到含代號與外資、投信、自營商買賣超的表格",
