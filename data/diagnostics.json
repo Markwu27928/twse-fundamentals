@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-11-16T14:23:31+00:00",
+ "generated_at": "2026-11-16T14:40:25+00:00",
  "errors": [],
  "markets": {
   "上市": {
@@ -1234,6 +1234,20 @@
      "filled": 1085,
      "base": 1086,
      "rate": 0.999
+    },
+    "trade_value": {
+     "source": "price",
+     "matched_key": "TradeValue",
+     "filled": 1086,
+     "base": 1086,
+     "rate": 1.0
+    },
+    "change": {
+     "source": "price",
+     "matched_key": "Change",
+     "filled": 1086,
+     "base": 1086,
+     "rate": 1.0
     }
    },
    "companies": 1089,
@@ -2549,6 +2563,20 @@
      "filled": 878,
      "base": 897,
      "rate": 0.979
+    },
+    "trade_value": {
+     "source": "price",
+     "matched_key": "TransactionAmount",
+     "filled": 897,
+     "base": 897,
+     "rate": 1.0
+    },
+    "change": {
+     "source": "price",
+     "matched_key": "Change",
+     "filled": 877,
+     "base": 897,
+     "rate": 0.978
     }
    },
    "companies": 898,
