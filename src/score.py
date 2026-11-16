@@ -19,11 +19,19 @@ def interp(v, bad, good):
     return max(0.0, min(100.0, (v - bad) / (good - bad) * 100.0))
 
 
+FIN_FORMATS = {"basi", "bd", "fh", "ins"}
+
+
+def is_financial(c):
+    return c.get("fs_format") in FIN_FORMATS or c.get("industry") == "17"
+
+
 def derive(c):
-    """由原始財報數字推導各指標。"""
+    """由原始財報數字推導各指標。金融業不適用毛利率、負債比、流動比。"""
     m = {}
+    fin = is_financial(c)
     rev = c.get("revenue")
-    if rev and rev > 0:
+    if rev and rev > 0 and not fin:
         if c.get("gross_profit") is not None:
             m["gross_margin"] = c["gross_profit"] / rev * 100
         if c.get("op_income") is not None:
@@ -32,10 +40,10 @@ def derive(c):
     if eq and eq > 0 and ni is not None and s in (1, 2, 3, 4):
         m["roe"] = ni * (4 / s) / eq * 100  # 累計淨利年化
     ta, tl = c.get("total_assets"), c.get("total_liab")
-    if ta and ta > 0 and tl is not None:
+    if ta and ta > 0 and tl is not None and not fin:
         m["debt_ratio"] = tl / ta * 100
     ca, cl = c.get("cur_assets"), c.get("cur_liab")
-    if cl and cl > 0 and ca is not None:
+    if cl and cl > 0 and ca is not None and not fin:
         m["current_ratio"] = ca / cl * 100
     if c.get("rev_yoy") is not None:
         m["rev_yoy"] = c["rev_yoy"]
@@ -124,6 +132,8 @@ def build(raw_companies, cfg, generated_at):
             "coverage": round(cov, 2),
             "mcap": None if c.get("mcap") is None else round(c["mcap"], 2),
             "price": c.get("price"),
+            "price_date": c.get("price_date"),
+            "financial": is_financial(c),
             "period": period,
             "metrics": {k: round(v, 2) for k, v in metrics.items()},
             "subs": {k: round(v) for k, v in subs.items()},

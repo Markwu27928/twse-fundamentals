@@ -34,6 +34,7 @@ def test_parse(raw):
     cs = fetch.build_companies(raw)
     codes = {c["code"] for c in cs}
     check("排除 ETF（0050）", "0050" not in codes)
+    check("排除存託憑證（9105）、保留 99 開頭股票（9999）", "9105" not in codes and "9999" in codes)
     check("公司數量", len(cs) > 1700, f"({len(cs)})")
     bom = [c for c in cs if c["code"] == "1101"]
     check("BOM 欄位的公司仍能解析財報", bom and bom[0]["revenue"] is not None)

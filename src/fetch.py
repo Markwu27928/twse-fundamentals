@@ -24,12 +24,16 @@ DIAG = ROOT / "data" / "diagnostics.json"
 
 TWSE = "https://openapi.twse.com.tw/v1"
 TPEX = "https://www.tpex.org.tw/openapi/v1"
+# 一般業(ci)以外的財報格式：異業、銀行、證券期貨、金控、保險
+EXTRA_FORMATS = ["mim", "basi", "bd", "fh", "ins"]
 
 SOURCES = {
     "上市": {
         "basic": f"{TWSE}/opendata/t187ap03_L",
         "income": f"{TWSE}/opendata/t187ap06_L_ci",
         "balance": f"{TWSE}/opendata/t187ap07_L_ci",
+        **{f"income_{t}": f"{TWSE}/opendata/t187ap06_L_{t}" for t in EXTRA_FORMATS},
+        **{f"balance_{t}": f"{TWSE}/opendata/t187ap07_L_{t}" for t in EXTRA_FORMATS},
         "revenue": f"{TWSE}/opendata/t187ap05_L",
         "valuation": f"{TWSE}/exchangeReport/BWIBBU_ALL",
         "price": f"{TWSE}/exchangeReport/STOCK_DAY_ALL",
@@ -38,6 +42,8 @@ SOURCES = {
         "basic": f"{TPEX}/mopsfin_t187ap03_O",
         "income": f"{TPEX}/mopsfin_t187ap06_O_ci",
         "balance": f"{TPEX}/mopsfin_t187ap07_O_ci",
+        **{f"income_{t}": f"{TPEX}/mopsfin_t187ap06_O_{t}" for t in EXTRA_FORMATS},
+        **{f"balance_{t}": f"{TPEX}/mopsfin_t187ap07_O_{t}" for t in EXTRA_FORMATS},
         "revenue": f"{TPEX}/mopsfin_t187ap05_O",
         "valuation": f"{TPEX}/tpex_mainboard_peratio_analysis",
         "price": f"{TPEX}/tpex_mainboard_daily_close_quotes",
@@ -52,12 +58,14 @@ NAME = ["公司簡稱", "CompanyAbbreviation", "公司名稱", "Name", "CompanyN
 F = {
     "industry": ["產業別", "SecuritiesIndustryCode", "IndustryCode"],
     "capital": ["實收資本額", "實收資本額(元)", "Paidin.Capital.NTDollars", "PaidInCapital"],
+    "shares": ["已發行普通股數或TDR原股發行股數", "IssueShares"],
+    "par": ["普通股每股面額", "ParValueOfCommonStock"],
     "year": ["年度", "Year"],
     "season": ["季別", "Season", "Quarter"],
-    "revenue": ["營業收入", "營業收入合計", "收益", "Revenue", "OperatingRevenue"],
+    "revenue": ["營業收入", "營業收入合計", "收入", "收益", "淨收益", "收益合計", "Revenue", "OperatingRevenue"],
     "gross_profit": ["營業毛利(毛損)淨額", "營業毛利(毛損)", "GrossProfit"],
     "op_income": ["營業利益(損失)", "營業利益", "OperatingIncome"],
-    "net_income": ["本期淨利(淨損)", "本期稅後淨利(淨損)", "NetIncome"],
+    "net_income": ["本期淨利(淨損)", "本期稅後淨利(淨損)", "本期稅後淨利", "NetIncome"],
     "eps": ["基本每股盈餘(元)", "基本每股盈餘", "EPS"],
     "total_assets": ["資產總額", "資產總計", "TotalAssets"],
     "total_liab": ["負債總額", "負債總計", "TotalLiabilities"],
@@ -73,7 +81,7 @@ F = {
 }
 # 每個欄位來自哪個來源（診斷用）
 FIELD_SOURCE = {
-    "industry": "basic", "capital": "basic",
+    "industry": "basic", "capital": "basic", "shares": "basic", "par": "basic",
     "year": "income", "season": "income", "revenue": "income", "gross_profit": "income",
     "op_income": "income", "net_income": "income", "eps": "income",
     "total_assets": "balance", "total_liab": "balance", "cur_assets": "balance",
@@ -81,7 +89,7 @@ FIELD_SOURCE = {
     "rev_yoy": "revenue", "pe": "valuation", "pb": "valuation", "dy": "valuation", "price": "price",
 }
 # 關鍵欄位：在「該來源有資料的公司」中，填值比例必須達到此門檻，否則判定欄位對應錯誤
-CRITICAL = {"industry": 0.95, "revenue": 0.9, "net_income": 0.9, "eps": 0.9,
+CRITICAL = {"industry": 0.95, "capital": 0.95, "revenue": 0.9, "net_income": 0.9, "eps": 0.9,
             "total_assets": 0.9, "equity": 0.9, "pe": 0.5, "price": 0.8}
 
 _FW = str.maketrans({"（": "(", "）": ")", "％": "%", "－": "-", "　": ""})
@@ -170,22 +178,43 @@ def build_companies(raw):
     """raw: {市場: {來源名: 資料列清單}} -> 標準化公司清單（純函式，方便測試）。"""
     companies = []
     for market, src in raw.items():
-        idx = {k: index_rows(src.get(k, [])) for k in ("income", "balance", "revenue", "valuation", "price")}
+        idx = {k: index_rows(src.get(k, [])) for k in ("revenue", "valuation", "price")}
+        # 財報：一般業優先，其餘格式（異業、金融業）補上；記錄採用的格式
+        fmt_of = {}
+        for kind in ("income", "balance"):
+            merged = {}
+            for t in ["ci"] + EXTRA_FORMATS:
+                key = kind if t == "ci" else f"{kind}_{t}"
+                for code, row in index_rows(src.get(key, [])).items():
+                    if code not in merged:
+                        merged[code] = row
+                        if kind == "income":
+                            fmt_of[code] = t
+            idx[kind] = merged
         for b in src.get("basic", []):
             code = clean_code(pick(b, CODE))
-            if not re.fullmatch(r"[1-9]\d{3}", code):  # 只留一般股票（排除 00 開頭 ETF、權證、DR 等）
+            # 只留一般股票：排除 0 開頭（ETF 等）與 91 開頭（存託憑證 TDR）
+            if not re.fullmatch(r"[1-9]\d{3}", code) or code.startswith("91"):
                 continue
             i, a, r, v, p = (idx[k].get(code, {}) for k in ("income", "balance", "revenue", "valuation", "price"))
             capital = num(pick(b, F["capital"]))
+            shares = num(pick(b, F["shares"]))
+            par = num(re.sub(r"[^\d.]", "", str(pick(b, F["par"]) or "")) or None)
+            if not shares and capital:
+                shares = capital / (par if par else 10)
             price = num(pick(p, F["price"]))
-            mcap = capital / 10 * price / 1e8 if capital and price else None  # 面額 10 元；單位：億元
+            mcap = shares * price / 1e8 if shares and price else None  # 單位：億元
             season = num(pick(i, F["season"]))
             companies.append({
                 "code": code,
                 "name": str(pick(b, NAME) or code).strip(),
                 "market": market,
                 "industry": str(pick(b, F["industry"]) or "").strip(),
+                "fs_format": fmt_of.get(code),
+                "capital": capital,
+                "shares": shares,
                 "price": price,
+                "price_date": str(pick(p, ["Date"]) or "") or None,
                 "mcap": mcap,
                 "year": str(pick(i, F["year"]) or "").strip() or None,
                 "season": int(season) if season else None,
@@ -223,6 +252,8 @@ def diagnose(raw, companies):
         cs = [c for c in companies if c["market"] == market]
         m["companies"] = len(cs)
         for field, cands in F.items():
+            if field == "par":
+                continue
             s = FIELD_SOURCE[field]
             base = cs if s == "basic" else [c for c in cs if c["_has"].get(s)]
             filled = sum(1 for c in base if c.get(field) not in (None, ""))
@@ -240,13 +271,19 @@ def diagnose(raw, companies):
                 m["sources"][s]["matched_companies"] = hit
                 if hit == 0:
                     errors.append(f"{market}/{s}：{len(src[s])} 筆資料，但沒有任何一筆對到公司代號（代號欄位對應錯誤）")
+        fmts = {}
+        for c in cs:
+            fmts[c.get("fs_format") or "無財報"] = fmts.get(c.get("fs_format") or "無財報", 0) + 1
+        m["fs_formats"] = fmts
+        m["no_statement"] = [f"{c['code']} {c['name']}" for c in cs if not c.get("fs_format")]
         report[market] = m
     return report, errors
 
 
 def print_report(report, errors):
     for market, m in report.items():
-        print(f"\n==== {market}（{m['companies']} 家）====")
+        print(f"\n==== {market}（{m['companies']} 家）財報格式：{m['fs_formats']} ====")
+        print("無財報：", "、".join(m["no_statement"]))
         for name, s in m["sources"].items():
             print(f"[{name}] {s['rows']} 筆，代號欄位={s['code_key']}，對到公司={s.get('matched_companies', '-')}")
             print("   欄位：", "、".join(s["keys"]))
