@@ -51,8 +51,14 @@ SOURCES = {
 }
 # 證交所開放資料（openapi）的股價、估值有時落後數個交易日；以證交所網站盤後資料當備援，取日期較新者
 TWSE_RWD = {
-    "price": "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?response=json",
-    "valuation": "https://www.twse.com.tw/rwd/zh/afterTrading/BWIBBU_d?response=json&selectType=ALL",
+    "price": [
+        "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?response=json",
+        "https://www.twse.com.tw/exchangeReport/STOCK_DAY_ALL?response=json",
+        "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?response=json&type=ALLBUT0999",
+    ],
+    "valuation": [
+        "https://www.twse.com.tw/rwd/zh/afterTrading/BWIBBU_d?response=json&selectType=ALL",
+    ],
 }
 REQUIRED = {"basic", "income"}
 MIN_COMPANIES = 500  # 低於此數量視為資料異常，不覆蓋舊資料
@@ -85,7 +91,6 @@ F = {
     "price": ["ClosingPrice", "Close", "收盤價"],
     "trade_value": ["TradeValue", "TransactionAmount", "成交金額"],
     "change": ["Change", "漲跌價差"],
-    "dividend_year": ["股利年度"],
 }
 # 每個欄位來自哪個來源（診斷用）
 FIELD_SOURCE = {
@@ -170,16 +175,47 @@ def fetch_json(url, retries=4):
     raise RuntimeError(f"{url} 抓取失敗：{last}")
 
 
+def _rwd_rows(fields, data, roc):
+    rows = []
+    for row in data:
+        r = dict(zip(fields, row), Date=roc)
+        # MI_INDEX 格式：漲跌方向在「漲跌(+/-)」（含 HTML），「漲跌價差」不帶正負號
+        sign_key = next((k for k in r if k.startswith("漲跌(")), None)
+        if sign_key is not None and "漲跌價差" in r:
+            neg = "-" in re.sub(r"<[^>]*>", "", str(r[sign_key]))
+            diff = str(r["漲跌價差"]).replace(",", "").lstrip("+-")
+            r["漲跌價差"] = ("-" if neg else "") + diff
+        rows.append(r)
+    return rows
+
+
 def fetch_twse_rwd(url):
-    """證交所網站盤後 JSON（fields + data）轉成與開放資料相同的「每列一個 dict」，Date 用民國年。"""
-    r = requests.get(url, headers={"User-Agent": "Mozilla/5.0 (fundamentals-bot)"}, timeout=90)
-    r.raise_for_status()
-    j = r.json()
-    if j.get("stat") not in (None, "OK") or not j.get("data"):
+    """證交所網站盤後 JSON 轉成與開放資料相同的「每列一個 dict」，Date 用民國年。
+    支援 {fields, data} 與 {tables:[{fields, data}]}（MI_INDEX）兩種格式。"""
+    last = None
+    for i in range(3):
+        try:
+            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0 (fundamentals-bot)",
+                                           "Accept": "application/json"}, timeout=90)
+            r.raise_for_status()
+            j = r.json()
+            break
+        except Exception as e:  # noqa: BLE001
+            last = e
+            time.sleep(5 * (i + 1))
+    else:
+        raise RuntimeError(f"回應不是 JSON 或連線失敗：{last}")
+    if j.get("stat") not in (None, "OK"):
         raise RuntimeError(f"無資料：{j.get('stat')}")
     d = str(j.get("date", ""))
     roc = f"{int(d[:4]) - 1911}{d[4:]}" if re.fullmatch(r"\d{8}", d) else d
-    return [dict(zip(j["fields"], row), Date=roc) for row in j["data"]]
+    if j.get("data") and j.get("fields"):
+        return _rwd_rows(j["fields"], j["data"], roc)
+    for t in j.get("tables") or []:
+        f = t.get("fields") or []
+        if "證券代號" in f and "收盤價" in f and t.get("data"):
+            return _rwd_rows(f, t["data"], roc)
+    raise RuntimeError("回應中找不到個股資料表")
 
 
 def latest_date(rows):
@@ -364,9 +400,19 @@ def main():
                 raw[market][name] = []
 
     chosen = {}
-    for name, url in TWSE_RWD.items():
+    for name, urls in TWSE_RWD.items():
         try:
-            alt = fetch_twse_rwd(url)
+            alt, errs = None, []
+            for url in urls:
+                try:
+                    alt = fetch_twse_rwd(url)
+                    break
+                except Exception as e:  # noqa: BLE001
+                    errs.append(f"{url.split('?')[0].rsplit('/', 1)[-1]}: {e}")
+                    time.sleep(3)
+            if alt is None:
+                raise RuntimeError("；".join(errs))
+            time.sleep(3)
             a_date, o_date = latest_date(alt), latest_date(raw["上市"].get(name, []))
             print(f"[比較] 上市/{name}：開放資料 {o_date or '無'}，網站盤後 {a_date}（{len(alt)} 筆）")
             if a_date > o_date:
