@@ -131,6 +131,10 @@ def test_score_and_rank(cs):
         if [by[c]["mcap"] for c in codes] != grp[:3]:
             ok_cap = False
     check("依市值前三名與全產業排序一致", ok_cap)
+    th = score.build_themes([dict(c) for c in out["companies"]], {"測試族": ["1101", "1102", "1101", "0000"]})["測試族"]
+    check("族群：去除重複代號、列出找不到的代號", th["missing"] == ["0000"] and len(th["mcap"]) == 2)
+    sc = [by[c]["score"] for c in th["score"] if by[c]["score"] is not None]
+    check("族群：依評分排序", sc == sorted(sc, reverse=True))
     size_kb = len(json.dumps(out, ensure_ascii=False, separators=(",", ":")).encode()) / 1024
     check("輸出檔大小合理（< 3MB）", size_kb < 3072, f"({size_kb:.0f} KB)")
     return out

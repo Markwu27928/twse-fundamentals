@@ -30,6 +30,11 @@ def main():
     tmp = pathlib.Path(tempfile.mkdtemp())
     shutil.copy(ROOT / "docs" / "index.html", tmp / "index.html")
     shutil.copy(ROOT / "tests" / "sample_data.json", tmp / "data.json")
+    import json
+    sample = json.loads((tmp / "data.json").read_text(encoding="utf-8"))
+    global data_has_themes, n_themes
+    n_themes = len(sample.get("themes") or {})
+    data_has_themes = n_themes > 0
     srv = serve(tmp)
     url = f"http://127.0.0.1:{srv.server_address[1]}/index.html"
     shots = ROOT / "tests"
@@ -101,9 +106,24 @@ def main():
         check("依市值排名按鈕生效", page.get_attribute("#r-mcap", "aria-pressed") == "true" and "市值" in page.inner_text("#count"))
         page.screenshot(path=str(shots / "shot_top_mcap.png"))
 
+        # 主題族群
+        if data_has_themes:
+            page.click("#v-theme")
+            check("族群分頁：顯示族群選單與排名切換", page.locator("#theme-pick").is_visible() and page.locator("#r-score").is_visible())
+            n_th = page.locator(".ind").count()
+            check("族群分頁：顯示所有族群", n_th == n_themes, f"({n_th}/{n_themes})")
+            check("族群標題下有平均評分與標籤統計", "平均評分" in page.locator(".ind-sub").first.inner_text())
+            page.select_option("#theme-pick", index=1)
+            one = page.locator(".ind").count()
+            check("選單篩選單一族群", one == 1, page.locator(".ind").first.inner_text())
+            page.locator("details.co summary").first.click()
+            check("展開卡片顯示所屬族群", "所屬族群" in page.locator("details.co").first.inner_text())
+            page.screenshot(path=str(shots / "shot_theme.png"))
+            page.select_option("#theme-pick", "全部")
+
         # 切回全市場，狀態保留
         page.click("#v-all")
-        check("切回全市場", page.locator("#ctl-all").is_visible() and page.locator("details.co").count() == 100)
+        check("切回全市場", page.locator("#ctl-all").is_visible() and page.locator("details.co").count() == 100 and page.locator("#theme-pick").is_hidden())
 
         # 水平溢出（手機版面）
         overflow = page.evaluate("document.documentElement.scrollWidth > document.documentElement.clientWidth")

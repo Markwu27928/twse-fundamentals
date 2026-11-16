@@ -52,6 +52,9 @@ details.co>summary::-webkit-details-marker{display:none}
 ul.pts{margin:4px 0;padding-left:18px;font-size:13px}
 .flag{color:var(--buy)}
 .ind{margin:18px 2px 4px;font-size:15px;font-weight:800}
+.ind-sub{color:var(--muted);font-size:12px;margin:0 2px 4px}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.tag{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--hold-bg);color:var(--muted)}
 button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);background:var(--card);color:var(--accent);border-radius:10px;font:inherit;font-weight:600}
 .foot{color:var(--muted);font-size:12px;margin-top:20px;line-height:1.6}
 .err{padding:16px;border:1px solid var(--buy);border-radius:10px;background:var(--buy-bg);color:var(--buy)}
@@ -64,7 +67,8 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
 
   <div class="seg" role="group" aria-label="檢視方式">
     <button id="v-all" aria-pressed="true">全市場</button>
-    <button id="v-top" aria-pressed="false">各產業前三名</button>
+    <button id="v-top" aria-pressed="false">產業前三名</button>
+    <button id="v-theme" aria-pressed="false">主題族群</button>
   </div>
 
   <div id="ctl-all" class="controls">
@@ -82,6 +86,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
   </div>
 
   <div id="ctl-top" class="controls" hidden>
+    <select id="theme-pick" aria-label="族群" hidden></select>
     <div class="seg" role="group" aria-label="排名依據">
       <button id="r-score" aria-pressed="true">依評分</button>
       <button id="r-mcap" aria-pressed="false">依市值</button>
@@ -101,7 +106,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
 <script>
 const PAGE = 100;
 const LABELS = ["全部", "買進", "觀望", "賣出", "資料不足"];
-const st = { view: "all", label: "全部", ind: "全部", sort: "score", q: "", rankBy: "score", limit: PAGE };
+const st = { view: "all", label: "全部", ind: "全部", sort: "score", q: "", rankBy: "score", theme: "全部", limit: PAGE };
 let D = null, BY = {};
 
 const $ = (id) => document.getElementById(id);
@@ -144,6 +149,7 @@ function card(c, rank) {
       h("div", { class: "bar" }, h("i", { style: `width:${c.subs[k] ?? 0}%` })),
       h("b", {}, shown)));
   }
+  if (c.themes && c.themes.length) body.append(h("h4", {}, "所屬族群"), h("div", { class: "tags" }, c.themes.map((t) => h("span", { class: "tag" }, t))));
   if (c.strengths.length) body.append(h("h4", {}, "優勢"), h("ul", { class: "pts" }, c.strengths.map((t) => h("li", {}, t))));
   if (c.weaknesses.length) body.append(h("h4", {}, "弱點"), h("ul", { class: "pts" }, c.weaknesses.map((t) => h("li", {}, t))));
   if (c.flags.length) body.append(h("h4", {}, "風險旗標"), h("ul", { class: "pts flag" }, c.flags.map((t) => h("li", {}, t))));
@@ -184,15 +190,36 @@ function renderTop() {
   }
 }
 
+function renderTheme() {
+  const names = Object.keys(D.themes || {});
+  const by = st.rankBy === "score" ? "評分" : "市值";
+  const shown = st.theme === "全部" ? names : names.filter((n) => n === st.theme);
+  $("count").textContent = `${shown.length} 個族群，族群內依${by}排序`;
+  const list = $("list"); list.replaceChildren();
+  for (const n of shown) {
+    const g = D.themes[n];
+    const codes = g[st.rankBy].filter((c) => BY[c]);
+    const lb = ["買進", "觀望", "賣出", "資料不足"].filter((l) => g.labels[l]).map((l) => `${l} ${g.labels[l]}`).join("・");
+    list.append(h("div", { class: "ind" }, `${n}（${codes.length} 檔）`),
+      h("div", { class: "ind-sub" }, `平均評分 ${g.avg_score == null ? "—" : Math.round(g.avg_score)}｜${lb}` +
+        (g.missing.length ? `｜找不到代號：${g.missing.join("、")}` : "")));
+    codes.forEach((code, i) => list.append(card(BY[code], i + 1)));
+  }
+}
+
 function render() {
   $("ctl-all").hidden = st.view !== "all";
-  $("ctl-top").hidden = st.view !== "top";
+  $("ctl-top").hidden = st.view === "all";
+  $("theme-pick").hidden = st.view !== "theme";
+  $("v-theme").setAttribute("aria-pressed", st.view === "theme");
   $("v-all").setAttribute("aria-pressed", st.view === "all");
   $("v-top").setAttribute("aria-pressed", st.view === "top");
   $("r-score").setAttribute("aria-pressed", st.rankBy === "score");
   $("r-mcap").setAttribute("aria-pressed", st.rankBy === "mcap");
   document.querySelectorAll("#chips .chip").forEach((b) => b.setAttribute("aria-pressed", b.dataset.l === st.label));
-  st.view === "all" ? renderAll() : renderTop();
+  if (st.view === "all") renderAll();
+  else if (st.view === "top") renderTop();
+  else renderTheme();
 }
 
 async function init() {
@@ -217,6 +244,9 @@ async function init() {
   $("q").oninput = (e) => { st.q = e.target.value; st.limit = PAGE; render(); };
   $("v-all").onclick = () => { st.view = "all"; render(); };
   $("v-top").onclick = () => { st.view = "top"; render(); };
+  $("v-theme").onclick = () => { st.view = "theme"; render(); };
+  $("theme-pick").append(h("option", { value: "全部" }, "全部族群"), ...Object.keys(D.themes || {}).map((n) => h("option", { value: n }, n)));
+  $("theme-pick").onchange = (e) => { st.theme = e.target.value; render(); };
   $("r-score").onclick = () => { st.rankBy = "score"; render(); };
   $("r-mcap").onclick = () => { st.rankBy = "mcap"; render(); };
   render();

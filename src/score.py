@@ -127,7 +127,32 @@ def industry_name(code, cfg):
     return code if code and not code.isdigit() else "其他"
 
 
-def build(raw_companies, cfg, generated_at):
+def build_themes(out, themes):
+    """主題族群：每個族群的成員（依評分、依市值排序）、找不到的代號、標籤統計與平均分數。"""
+    by = {x["code"]: x for x in out}
+    result = {}
+    for name, codes in themes.items():
+        codes = list(dict.fromkeys(str(c).strip() for c in codes))  # 去重、保留順序
+        members = [by[c] for c in codes if c in by]
+        for m in members:
+            m.setdefault("themes", []).append(name)
+        scored = sorted([m for m in members if m["score"] is not None], key=lambda x: (-x["score"], -(x["mcap"] or 0)))
+        unscored = [m for m in members if m["score"] is None]
+        sized = sorted(members, key=lambda x: -(x["mcap"] or -1))
+        labels = {}
+        for m in members:
+            labels[m["label"]] = labels.get(m["label"], 0) + 1
+        result[name] = {
+            "score": [m["code"] for m in scored + unscored],
+            "mcap": [m["code"] for m in sized],
+            "missing": [c for c in codes if c not in by],
+            "avg_score": round(sum(m["score"] for m in scored) / len(scored), 1) if scored else None,
+            "labels": labels,
+        }
+    return result
+
+
+def build(raw_companies, cfg, generated_at, themes=None):
     out = []
     for c in raw_companies:
         metrics, subs, score, label, cov, flags, up, dn = score_company(c, cfg)
@@ -164,6 +189,8 @@ def build(raw_companies, cfg, generated_at):
         sized.sort(key=lambda x: -x["mcap"])
         top_mcap[ind] = [x["code"] for x in sized[:3]]
 
+    theme_groups = build_themes(out, themes or {})
+
     counts = {}
     for x in out:
         counts[x["label"]] = counts.get(x["label"], 0) + 1
@@ -175,6 +202,7 @@ def build(raw_companies, cfg, generated_at):
         "industries": industries,
         "companies": out,
         "top": {"score": top_score, "mcap": top_mcap},
+        "themes": theme_groups,
     }
 
 
@@ -183,7 +211,12 @@ def main(src=None, dst=None):
     dst = pathlib.Path(dst) if dst else ROOT / "docs" / "data.json"
     cfg = json.loads((ROOT / "config" / "scoring.json").read_text(encoding="utf-8"))
     payload = json.loads(src.read_text(encoding="utf-8"))
-    result = build(payload["companies"], cfg, payload["generated_at"])
+    tpath = ROOT / "config" / "themes.json"
+    themes = json.loads(tpath.read_text(encoding="utf-8")).get("themes", {}) if tpath.exists() else {}
+    result = build(payload["companies"], cfg, payload["generated_at"], themes)
+    for name, g in result["themes"].items():
+        if g["missing"]:
+            print(f"[提醒] 族群「{name}」找不到代號：{', '.join(g['missing'])}")
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_text(json.dumps(result, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"完成：{len(result['companies'])} 家，標籤分布 {result['counts']} -> {dst}")
