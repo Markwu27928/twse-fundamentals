@@ -27,7 +27,9 @@ def serve(directory):
 
 
 def main():
-    tmp = pathlib.Path(tempfile.mkdtemp())
+    site_root = pathlib.Path(tempfile.mkdtemp())
+    tmp = site_root / "twse-fundamentals"   # 與 GitHub Pages 相同的路徑結構：/twse-fundamentals/ 與 /huili/
+    tmp.mkdir()
     shutil.copy(ROOT / "docs" / "index.html", tmp / "index.html")
     shutil.copy(ROOT / "tests" / "sample_data.json", tmp / "data.json")
     import json
@@ -82,8 +84,31 @@ def main():
                     "foreign": {"date": "2026-11-16", "today": -184.0, "days": 5, "sum": -612.0, "series": []},
                     "verdict": {"label": "明顯匯出", "flow": -1, "fx": -1, "detail": "外資近 5 日賣超 612 億，新台幣貶值（美元 +0.97%）"}}
     (tmp / "macro.json").write_text(json.dumps(macro_sample, ensure_ascii=False), encoding="utf-8")
-    srv = serve(tmp)
-    url = f"http://127.0.0.1:{srv.server_address[1]}/index.html"
+    # 匯立分點：用 huili repo 產生程式與真實 CSV 建立資料檔（有 huili 時），否則用模擬資料
+    global hl_codes
+    hl_dir = site_root / "huili"
+    hl_dir.mkdir()
+    huili_repo = ROOT.parent / "huili"
+    if (huili_repo / "build_site.py").exists():
+        sys.path.insert(0, str(huili_repo))
+        import build_site
+        hl = build_site.build_data()
+    else:
+        codes = [c["code"] for c in sample["companies"]][:60]
+        hl = {"version": 1, "unit": "仟元", "top_n": 50, "names": {}, "days": [
+            {"d": "20261113", "r": [[c, 5000, 1000, None, None] for c in codes[:30]]},
+            {"d": "20261116", "r": [[c, 9000, 1000, 30, 5] for c in codes[:20]] + [[c, 0, 4000, None, None] for c in codes[40:50]]}]}
+    (hl_dir / "data.json").write_text(json.dumps(hl, ensure_ascii=False), encoding="utf-8")
+    latest = sorted(hl["days"], key=lambda d: d["d"])[-1]
+    known = {c["code"] for c in sample["companies"]}
+    hl_codes = {"buy": [r[0] for r in latest["r"] if r[1] - r[2] > 0 and r[0] in known],
+                "sell": [r[0] for r in latest["r"] if r[1] - r[2] < 0 and r[0] in known]}
+    top_buy = max((r for r in latest["r"] if r[0] in known), key=lambda r: r[1] - r[2])
+    hl_codes["top"] = top_buy[0]
+    w = (top_buy[1] - top_buy[2]) / 10
+    hl_codes["top_txt"] = f"{w / 10000:.2f} 億" if w >= 10000 else f"{round(w):,} 萬"
+    srv = serve(site_root)
+    url = f"http://127.0.0.1:{srv.server_address[1]}/twse-fundamentals/index.html"
     shots = ROOT / "tests"
     with sync_playwright() as p:
         b = p.chromium.launch()
@@ -221,14 +246,34 @@ def main():
         page.select_option("#flow-pick", index=1)
         check("熱門題材資金排行", page.locator("table.grp tr").count() > 3)
         n_opts = page.locator("#flow-pick option").count()
-        check("清單選單：2 個排行＋各股票清單", n_opts == 2 + n_flow_lists, f"({n_opts})")
-        page.select_option("#flow-pick", index=2)
+        check("清單選單：2 個排行＋5 個匯立清單＋各股票清單", n_opts == 2 + 5 + n_flow_lists, f"({n_opts})")
+        page.select_option("#flow-pick", "法人買超金額")
         n_cards = page.locator("details.co").count()
         check("法人買超金額清單：最多 30 檔且有資金說明", 0 < n_cards <= 30 and "三大法人" in page.locator("details.co .flow").first.inner_text(), f"({n_cards})")
         page.locator("details.co summary").first.click()
         fb = page.locator("details.co").first.inner_text()
         check("卡片明細：法人買賣超表與融資融券", "法人買賣超（張" in fb and "外資" in fb and "投信" in fb and "融資餘額" in fb and "券資比" in fb)
         page.screenshot(path=str(shots / "shot_flow_list.png"))
+
+        # 匯立分點（讀取 ../huili/data.json）
+        page.select_option("#flow-pick", "匯立分點買超（最新）")
+        page.wait_for_selector("details.co")
+        names = page.locator("details.co .nm small").all_inner_texts()
+        check("匯立買超清單：與資料檔最新一天的買超股票一致、依金額排序", names == hl_codes["buy"][:len(names)] and len(names) == len(hl_codes["buy"]),
+              f"({len(names)} 檔，第一名 {names[:1]} vs {hl_codes['top']})")
+        first = page.locator("details.co").first
+        check("卡片標記「匯立買」並顯示匯立金額", first.locator(".hl").inner_text() == "匯立買" and hl_codes["top_txt"] in first.locator(".flow").inner_text(),
+              first.locator(".flow").inner_text())
+        first.locator("summary").click()
+        hb = first.inner_text()
+        check("卡片明細：匯立分點區塊與上榜說明", "匯立分點（永豐金-匯立 9A81）" in hb and "前 50 名" in hb)
+        page.select_option("#flow-pick", "匯立分點賣超（最新）")
+        check("匯立賣超清單筆數正確", page.locator("details.co").count() == len(hl_codes["sell"]), f"({page.locator('details.co').count()}/{len(hl_codes['sell'])})")
+        page.screenshot(path=str(shots / "shot_huili.png"))
+        page.select_option("#flow-pick", "匯立買＋法人買")
+        check("匯立買＋法人買清單可顯示", page.locator("#count").inner_text().startswith("匯立買＋法人買"))
+        page.click("#v-all")
+        check("其他分頁也顯示匯立標記", page.locator("details.co .hl").count() >= 0)
 
         # 切回全市場，狀態保留
         page.click("#v-all")
@@ -259,6 +304,24 @@ def main():
         m2.goto(url)
         m2.wait_for_selector("#macro:not([hidden])")
         check("只有外資資料時：匯率顯示暫缺", "暫缺" in m2.inner_text("#macro") and "判讀：中性" in m2.inner_text("#macro"))
+        # huili 資料檔不存在：主頁照常、清單顯示無法讀取
+        (site_root / "huili" / "data.json").unlink()
+        hp = ctx.new_page()
+        hp.goto(url)
+        hp.wait_for_selector("details.co")
+        hp.click("#v-flow")
+        hp.select_option("#flow-pick", "匯立分點買超（最新）")
+        hp.wait_for_timeout(500)
+        check("huili 資料檔讀不到：顯示說明、其他功能正常", "暫時無法讀取" in hp.inner_text("#count") and hp.locator(".hl").count() == 0)
+        # 版本不符：不使用
+        (site_root / "huili" / "data.json").write_text(json.dumps({"version": 2, "days": []}), encoding="utf-8")
+        vp = ctx.new_page()
+        vp.goto(url)
+        vp.wait_for_selector("details.co")
+        vp.click("#v-flow")
+        vp.select_option("#flow-pick", "匯立分點買超（最新）")
+        vp.wait_for_timeout(500)
+        check("huili 資料格式版本不同：不使用並說明", "版本" in vp.inner_text("#count"), vp.inner_text("#count"))
         # 資料缺失時的錯誤畫面
         (tmp / "data.json").unlink()
         e = ctx.new_page()

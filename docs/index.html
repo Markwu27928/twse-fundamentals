@@ -72,6 +72,9 @@ ul.pts{margin:4px 0;padding-left:18px;font-size:13px}
 .up{color:var(--buy)}.down{color:var(--sell)}
 .flow{font-size:12px;margin-top:2px;color:var(--muted)}
 .sig{display:inline-block;font-size:11px;font-weight:700;color:var(--accent);background:var(--hold-bg);border-radius:6px;padding:1px 6px;margin:2px 4px 0 0}
+.hl{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px;margin-left:6px;vertical-align:2px;color:#6b3fa0;background:#efe6fa}
+.hl.s{color:#5b6573;background:var(--hold-bg)}
+@media (prefers-color-scheme:dark){.hl{color:#c9a8f5;background:#2e2340}}
 .sig.warn{color:var(--sell);background:var(--sell-bg)}
 .grp{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .grp td,.grp th{padding:7px 8px;border-bottom:1px solid var(--line);text-align:right}
@@ -128,6 +131,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
   <div class="foot">
     評分為依設定檔規則計算的財報體質分數，並非預測股價漲跌，也不構成投資建議。<br>
     標籤顏色採台股習慣：買進為紅、賣出為綠。<br>
+    「匯立分點」：讀取同網站的匯立分點日報資料（永豐金-匯立 9A81），每天只收錄買超、賣超各前 50 名。<br>
     「資金流向」：三大法人買賣超與融資融券來自證交所、櫃買中心每日資料；金額以最新收盤價估算。「籌碼集中」為近 5 日法人買超占發行股數 ≥ 0.5%；「法人買、融資減」代表籌碼由散戶流向法人。<br>
     「營收成長潛力」：近 3 個月營收合計年增 ≥ 25%、比前 3 個月加速 10 個百分點以上、近 3 個月每月年增皆為正、最新月營收創近 12 個月新高、月營收 ≥ 1 億且本業未虧損；建材營造業不適用（不影響評分，供篩選參考）。<br>
     「營收連兩月成長」：最近兩個月的單月營收，月增率與年增率都大於 0，評分另加分。<br>
@@ -140,7 +144,9 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
 const PAGE = 100;
 const LABELS = ["全部", "買進", "觀望", "賣出", "資料不足"];
 const st = { view: "all", hi: false, pot: false, label: "全部", ind: "全部", sort: "score", q: "", rankBy: "score", theme: "全部", limit: PAGE };
-let D = null, BY = {};
+let D = null, BY = {}, HL = null, HL_META = null, HL_ERR = null;
+const HUILI_URL = "../huili/data.json";
+const HUILI_VERSION = 1;
 
 const $ = (id) => document.getElementById(id);
 function h(tag, attrs, ...kids) {
@@ -164,7 +170,8 @@ function card(c, rank, product, flowLine) {
     rank ? h("span", { class: "rank" }, rank) : null,
     h("div", { class: "main" },
       h("div", { class: "nm" }, c.name, h("small", {}, c.code), c.rev_hot ? h("span", { class: "hot" }, `營收連${c.rev.streak}月↑`) : null,
-        c.potential ? h("span", { class: "pot" }, "成長潛力") : null),
+        c.potential ? h("span", { class: "pot" }, "成長潛力") : null,
+        hlTag(c.code)),
       product ? h("div", { class: "prod" }, "主力產品：" + product) : null,
       flowLine ? h("div", { class: "flow" }, flowLine) : null,
       h("div", { class: "meta" }, `${c.industry}・${c.market}・市值 ${fmtMcap(c.mcap)}` +
@@ -226,6 +233,16 @@ function card(c, rank, product, flowLine) {
     body.append(h("h4", {}, "融資融券（張）"), h("div", { class: "meta" },
       `融資餘額 ${F.margin.toLocaleString()}` + (F.margin_chg5 != null ? `（${F.margin_days} 日 ${wan(F.margin_chg5)}${F.margin_chg5_pct != null ? `，${F.margin_chg5_pct > 0 ? "+" : ""}${F.margin_chg5_pct}%` : ""}）` : "") +
       `；融券餘額 ${F.short.toLocaleString()}` + (F.short_ratio != null ? `；券資比 ${F.short_ratio}%` : "")));
+  }
+  const hx = HL && HL[c.code];
+  if (hx) {
+    const lines = [];
+    if (hx.today != null) lines.push(`${rocLike(HL_META.latest)} ${hx.today > 0 ? "買超" : "賣超"} ${wanYuan(Math.abs(hx.today))}` + (hx.streak > 1 ? `（連續 ${hx.streak} 天${hx.today > 0 ? "買超" : "賣超"}上榜）` : ""));
+    else lines.push(`${rocLike(HL_META.latest)} 未上榜（最近一次 ${rocLike(hx.last)}）`);
+    lines.push(`近 ${HL_META.n5} 個交易日累計 ${hx.cum5 >= 0 ? "買超" : "賣超"} ${wanYuan(Math.abs(hx.cum5))}，上榜 ${hx.on5} 天`);
+    if (hx.avg != null) lines.push(`最新買進均價約 ${hx.avg.toFixed(hx.avg < 100 ? 2 : 1)} 元`);
+    body.append(h("h4", {}, "匯立分點（永豐金-匯立 9A81）"), h("ul", { class: "pts" }, lines.map((t) => h("li", {}, t))),
+      h("div", { class: "meta" }, `每天只收錄買超、賣超各前 ${HL_META.top_n} 名，未上榜不代表沒有交易。`));
   }
   if (c.flow_signals && c.flow_signals.length)
     body.append(h("div", {}, c.flow_signals.map((t) => h("span", { class: "sig" + (t.includes("賣、融資增") ? " warn" : "") }, t))));
@@ -322,9 +339,35 @@ function flowMetric(name, c) {
   if (name.includes("融資")) return `法人 ${F.n5} 日 ${v(F.total5_value)}，融資 ${F.margin_days || 0} 日 ${wan(F.margin_chg5)} 張（${F.margin_chg5_pct ?? "—"}%）`;
   return `三大法人 ${F.n5} 日 ${v(F.total5_value)}（外資 ${v(F.foreign5_value)}、投信 ${v(F.trust5_value)}）`;
 }
+const HL_LISTS = ["匯立分點買超（最新）", "匯立分點賣超（最新）", "匯立 5 日累計買超", "匯立買＋法人買", "匯立買＋基本面佳"];
+function hlList(name) {
+  if (!HL) return [];
+  const xs = Object.entries(HL).filter(([c]) => BY[c]);
+  const pos = (f) => xs.filter(f);
+  let r;
+  if (name === HL_LISTS[0]) r = pos(([, v]) => v.today > 0).sort((a, b) => b[1].today - a[1].today);
+  else if (name === HL_LISTS[1]) r = pos(([, v]) => v.today < 0).sort((a, b) => a[1].today - b[1].today);
+  else if (name === HL_LISTS[2]) r = pos(([, v]) => v.cum5 > 0).sort((a, b) => b[1].cum5 - a[1].cum5);
+  else if (name === HL_LISTS[3]) r = pos(([c, v]) => v.cum5 > 0 && (BY[c].flow?.total5_value ?? 0) > 0).sort((a, b) => b[1].cum5 - a[1].cum5);
+  else r = pos(([c, v]) => v.cum5 > 0 && BY[c].label === "買進").sort((a, b) => b[1].cum5 - a[1].cum5);
+  return r.map(([c]) => c);
+}
+function hlMetric(code) {
+  const v = HL[code];
+  const t = v.today == null ? "最新未上榜" : `${v.today > 0 ? "買超" : "賣超"} ${wanYuan(Math.abs(v.today))}${v.streak > 1 ? `（連 ${v.streak} 天）` : ""}`;
+  return `匯立：${t}；${HL_META.n5} 日累計 ${v.cum5 >= 0 ? "+" : "−"}${wanYuan(Math.abs(v.cum5))}`;
+}
 function renderFlow() {
   const FL = D.flows;
   const list = $("list"); list.replaceChildren();
+  const pick0 = st.flow || FLOW_GROUPS[0];
+  if (HL_LISTS.includes(pick0)) {
+    if (!HL) { $("count").textContent = HL_ERR ? `匯立分點資料暫時無法讀取（${HL_ERR}）` : "匯立分點資料載入中…"; return; }
+    const codes = hlList(pick0);
+    $("count").textContent = `${pick0}（${codes.length} 檔；資料日 ${rocLike(HL_META.latest)}，每天只收錄買賣超各前 ${HL_META.top_n} 名）`;
+    codes.forEach((code, i) => list.append(card(BY[code], i + 1, null, hlMetric(code))));
+    return;
+  }
   if (!FL) { $("count").textContent = "資金流向資料尚未產生"; return; }
   const pick = st.flow || FLOW_GROUPS[0];
   if (FLOW_GROUPS.includes(pick)) {
@@ -371,6 +414,47 @@ function pctSpan(v, d = 2) {
 function netSpan(v) {
   return h("span", { class: v > 0 ? "up" : v < 0 ? "down" : "" }, `${v > 0 ? "+" : ""}${Math.round(v).toLocaleString()} 億`);
 }
+function rocLike(d) { return d ? `${d.slice(4, 6)}/${d.slice(6, 8)}` : "—"; }
+function wanYuan(k) { const w = k / 10; return w >= 10000 ? `${(w / 10000).toFixed(2)} 億` : `${Math.round(w).toLocaleString()} 萬`; }
+function hlTag(code) {
+  const v = HL && HL[code];
+  if (!v || v.today == null) return null;
+  return h("span", { class: "hl" + (v.today < 0 ? " s" : "") }, v.today > 0 ? "匯立買" : "匯立賣");
+}
+function buildHuili(j) {
+  if (j.version !== HUILI_VERSION) throw new Error(`資料格式版本 ${j.version} 與預期 ${HUILI_VERSION} 不同`);
+  const days = (j.days || []).slice().sort((a, b) => a.d.localeCompare(b.d));
+  if (!days.length) throw new Error("沒有資料");
+  const recent = days.slice(-5), latest = days[days.length - 1];
+  const out = {};
+  const diffOf = (r) => (r[1] ?? 0) - (r[2] ?? 0);
+  for (const day of recent) for (const r of day.r) {
+    const o = out[r[0]] || (out[r[0]] = { today: null, streak: 0, cum5: 0, on5: 0, last: null, avg: null });
+    o.cum5 += diffOf(r); o.on5 += 1; o.last = day.d;
+  }
+  for (const r of latest.r) {
+    const o = out[r[0]], dv = diffOf(r);
+    o.today = dv;
+    if (r[3]) o.avg = r[1] / r[3];
+    let n = 0;
+    for (let i = days.length - 1; i >= 0; i--) {
+      const x = days[i].r.find((y) => y[0] === r[0]);
+      if (x && Math.sign(diffOf(x)) === Math.sign(dv)) n++; else break;
+    }
+    o.streak = n;
+  }
+  HL_META = { latest: latest.d, n5: recent.length, top_n: j.top_n || 50, unit: j.unit };
+  return out;
+}
+async function loadHuili() {
+  try {
+    const r = await fetch(HUILI_URL, { cache: "no-cache" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    HL = buildHuili(await r.json());
+  } catch (e) { HL = null; HL_ERR = e.message; }
+  if (D) render();
+}
+
 async function loadMacro() {
   const box = $("macro");
   let M = null;
@@ -425,6 +509,7 @@ async function init() {
   $("v-flow").onclick = () => { st.view = "flow"; render(); };
   if (D.flows) {
     $("flow-pick").append(...FLOW_GROUPS.map((n) => h("option", { value: n }, n)),
+      ...HL_LISTS.map((n) => h("option", { value: n }, n)),
       ...Object.keys(D.flows.lists).map((n) => h("option", { value: n }, `${n}（${D.flows.lists[n].length}）`)));
     $("flow-pick").onchange = (e) => { st.flow = e.target.value; render(); };
   }
@@ -434,6 +519,7 @@ async function init() {
   $("r-mcap").onclick = () => { st.rankBy = "mcap"; render(); };
   render();
   loadMacro();
+  loadHuili();
 }
 init();
 </script>
