@@ -20,6 +20,12 @@ body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 -apple-system
 .wrap{max-width:720px;margin:0 auto;padding:12px 12px 40px}
 h1{font-size:18px;margin:6px 0 2px}
 .sub{color:var(--muted);font-size:12px;margin-bottom:10px}
+.macro{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:6px 0 10px;font-size:13px}
+.macro .row2{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.macro b{font-size:16px}
+.macro .verdict{margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.macro .small{color:var(--muted);font-size:12px}
+.vd-in{color:var(--buy);background:var(--buy-bg)}.vd-out{color:var(--sell);background:var(--sell-bg)}.vd-mid{color:var(--hold);background:var(--hold-bg)}
 .seg{display:flex;background:var(--hold-bg);border-radius:10px;padding:3px;gap:3px;margin:8px 0}
 .seg button{flex:1;border:0;background:transparent;color:var(--muted);padding:9px 2px;white-space:nowrap;border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
 .seg button[aria-pressed=true]{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
@@ -67,6 +73,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
 <div class="wrap">
   <h1>台股財報評分</h1>
   <div class="sub" id="sub">載入中…</div>
+  <div class="macro" id="macro" hidden></div>
 
   <div class="seg" role="group" aria-label="檢視方式">
     <button id="v-all" aria-pressed="true">全市場</button>
@@ -248,6 +255,38 @@ function render() {
   else renderHot();
 }
 
+function pctSpan(v, d = 2) {
+  if (v == null) return h("span", {}, "—");
+  return h("span", { class: v > 0 ? "up" : v < 0 ? "down" : "" }, `${v > 0 ? "▲" : v < 0 ? "▼" : ""}${Math.abs(v).toFixed(d)}%`);
+}
+function netSpan(v) {
+  return h("span", { class: v > 0 ? "up" : v < 0 ? "down" : "" }, `${v > 0 ? "+" : ""}${Math.round(v).toLocaleString()} 億`);
+}
+async function loadMacro() {
+  const box = $("macro");
+  let M = null;
+  try {
+    const r = await fetch("macro.json", { cache: "no-cache" });
+    if (r.ok) M = await r.json();
+  } catch (e) { /* 匯率資料暫缺時不影響主頁 */ }
+  if (!M || (!M.fx && !M.foreign)) { box.hidden = true; return; }
+  box.replaceChildren();
+  const fx = M.fx, fr = M.foreign, vd = M.verdict;
+  box.append(h("div", { class: "row2" },
+    h("div", {}, "美元兌台幣 ", fx ? h("b", {}, fx.rate.toFixed(3)) : "暫缺", fx ? [" ", pctSpan(fx.change_1d_pct), h("span", { class: "small" }, " 單日")] : null),
+    fx && fx.change_win_pct != null ? h("div", {}, h("span", { class: "small" }, "近一週 "), pctSpan(fx.change_win_pct)) : null));
+  box.append(h("div", { class: "row2" },
+    h("div", {}, "外資買賣超 ", fr ? [h("b", {}, netSpan(fr.today)), h("span", { class: "small" }, ` ${fr.date.slice(5)}`)] : "暫缺"),
+    fr ? h("div", {}, h("span", { class: "small" }, `近 ${fr.days} 日 `), netSpan(fr.sum)) : null));
+  if (vd) {
+    const cls = vd.label.includes("匯入") ? "vd-in" : vd.label.includes("匯出") ? "vd-out" : "vd-mid";
+    box.append(h("div", { class: "verdict" }, h("span", { class: "badge " + cls }, "判讀：" + vd.label), h("span", { class: "small" }, vd.detail)));
+  }
+  box.append(h("div", { class: "small", style: "margin-top:4px" },
+    "外資買賣超為上市市場；匯率為每日參考匯率。這是資金流向參考指標，不是外資實際匯出入金額。"));
+  box.hidden = false;
+}
+
 async function init() {
   try {
     const r = await fetch("data.json", { cache: "no-cache" });
@@ -277,6 +316,7 @@ async function init() {
   $("r-score").onclick = () => { st.rankBy = "score"; render(); };
   $("r-mcap").onclick = () => { st.rankBy = "mcap"; render(); };
   render();
+  loadMacro();
 }
 init();
 </script>

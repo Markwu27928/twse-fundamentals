@@ -35,6 +35,11 @@ def main():
     global data_has_themes, n_themes
     n_themes = len(sample.get("themes") or {})
     data_has_themes = n_themes > 0
+    macro_sample = {"generated_at": "2026-11-16T09:00:00+00:00", "errors": [],
+                    "fx": {"date": "2026-11-16", "rate": 31.312, "change_1d_pct": 0.21, "change_win_pct": 0.97, "win_from": "2026-11-09"},
+                    "foreign": {"date": "2026-11-16", "today": -184.0, "days": 5, "sum": -612.0, "series": []},
+                    "verdict": {"label": "明顯匯出", "flow": -1, "fx": -1, "detail": "外資近 5 日賣超 612 億，新台幣貶值（美元 +0.97%）"}}
+    (tmp / "macro.json").write_text(json.dumps(macro_sample, ensure_ascii=False), encoding="utf-8")
     srv = serve(tmp)
     url = f"http://127.0.0.1:{srv.server_address[1]}/index.html"
     shots = ROOT / "tests"
@@ -48,6 +53,11 @@ def main():
         page.goto(url)
         page.wait_for_selector("details.co")
 
+        page.wait_for_selector("#macro:not([hidden])")
+        mt = page.inner_text("#macro")
+        check("標題顯示匯率、外資買賣超與判讀", "31.312" in mt and "-184" in mt and "-612" in mt and "判讀：明顯匯出" in mt, mt.replace("\n", " | "))
+        check("匯出判讀用綠色標籤、美元上漲用紅色", page.locator("#macro .vd-out").count() == 1 and page.locator("#macro .up").count() >= 1)
+        page.screenshot(path=str(shots / "shot_macro.png"))
         check("全市場預設顯示第一頁 100 檔", page.locator("details.co").count() == 100)
         check("標題與更新時間顯示", "更新：" in page.inner_text("#sub"))
         check("計數文字", page.inner_text("#count").startswith("共 "))
@@ -147,6 +157,19 @@ def main():
 
         check("無 console 錯誤", not errors, str(errors))
 
+        # macro.json 不存在：主頁照常、標題區塊隱藏
+        (tmp / "macro.json").unlink()
+        m = ctx.new_page()
+        m.goto(url)
+        m.wait_for_selector("details.co")
+        check("macro.json 不存在時：區塊隱藏、主頁照常", m.locator("#macro").is_hidden() and m.locator("details.co").count() == 100)
+        # 匯率與外資只有一邊時
+        (tmp / "macro.json").write_text(json.dumps({"fx": None, "errors": ["x"], "foreign": {"date": "2026-11-16", "today": 50.0, "days": 1, "sum": 50.0, "series": []},
+                                                    "verdict": {"label": "中性", "flow": 0, "fx": None, "detail": "匯率資料不足，只用外資買賣超判讀"}}), encoding="utf-8")
+        m2 = ctx.new_page()
+        m2.goto(url)
+        m2.wait_for_selector("#macro:not([hidden])")
+        check("只有外資資料時：匯率顯示暫缺", "暫缺" in m2.inner_text("#macro") and "判讀：中性" in m2.inner_text("#macro"))
         # 資料缺失時的錯誤畫面
         (tmp / "data.json").unlink()
         e = ctx.new_page()

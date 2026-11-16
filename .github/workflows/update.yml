@@ -36,12 +36,16 @@ jobs:
         if: steps.fetch.outcome == 'success'
         run: python src/score.py
 
+      - name: 抓取匯率與外資買賣超（失敗不影響股票資料）
+        continue-on-error: true
+        run: python src/macro.py
+
       - name: 提交更新（欄位檢查報告一律提交，方便查錯）
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/diagnostics.json
+          git add data/diagnostics.json data/macro_history.json docs/macro.json 2>/dev/null || true
           if [ "${{ steps.fetch.outcome }}" = "success" ]; then
             git add data/companies.json data/turnover_history.json docs/data.json
           fi
