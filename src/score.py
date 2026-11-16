@@ -252,7 +252,75 @@ def build_products(out, pcfg, heat):
     return themes[: pcfg.get("show_top", 20)], len(themes)
 
 
-def build(raw_companies, cfg, generated_at, themes=None, products=None, heat=None):
+def flow_signals(f, cfg):
+    """個股資金訊號：連買、籌碼集中、融資減法人買（籌碼健康）、法人賣融資增（警示）。"""
+    fc = cfg.get("flows", {})
+    sig = []
+    if not f or not f.get("n5"):
+        return sig
+    n = fc.get("streak_days", 3)
+    if (f.get("foreign_streak") or 0) >= n:
+        sig.append(f"外資連買{f['foreign_streak']}天")
+    if (f.get("trust_streak") or 0) >= n:
+        sig.append(f"投信連買{f['trust_streak']}天")
+    if (f.get("conc5") or 0) >= fc.get("conc_pct", 0.5):
+        sig.append("籌碼集中")
+    t5, mc = f.get("total5") or 0, f.get("margin_chg5")
+    if t5 > 0 and mc is not None and mc < 0:
+        sig.append("法人買、融資減")
+    if t5 < 0 and (f.get("margin_chg5_pct") or 0) >= fc.get("margin_up_pct", 5):
+        sig.append("法人賣、融資增")
+    return sig
+
+
+def build_flow_views(out, cfg, theme_groups, hot, industries):
+    """資金流向分頁用的排行：產業、熱門題材的法人 5 日淨買超金額，以及個股排行清單。"""
+    by = {x["code"]: x for x in out}
+    size = cfg.get("flows", {}).get("list_size", 30)
+
+    def agg(codes):
+        fs = [by[c]["flow"] for c in codes if c in by and by[c].get("flow") and by[c]["flow"].get("total5_value") is not None]
+        if not fs:
+            return None
+        return {"total": round(sum(f["total5_value"] for f in fs), 1),
+                "foreign": round(sum(f.get("foreign5_value") or 0 for f in fs), 1),
+                "trust": round(sum(f.get("trust5_value") or 0 for f in fs), 1), "n": len(fs)}
+
+    ind_rows = []
+    for ind in industries:
+        a = agg([x["code"] for x in out if x["industry"] == ind])
+        if a:
+            ind_rows.append({"name": ind, **a})
+    ind_rows.sort(key=lambda r: -r["total"])
+    prod_rows = []
+    for t in hot:
+        a = agg(list(t["items"]))
+        if a:
+            prod_rows.append({"name": t["name"], **a})
+    prod_rows.sort(key=lambda r: -r["total"])
+
+    def top(key, cond=lambda x: True, reverse=True):
+        xs = [x for x in out if x.get("flow") and x["flow"].get(key) is not None and cond(x)]
+        xs.sort(key=lambda x: x["flow"][key], reverse=reverse)
+        return [x["code"] for x in xs[:size]]
+
+    lists = {
+        "法人買超金額": top("total5_value", lambda x: x["flow"]["total5_value"] > 0),
+        "法人賣超金額": top("total5_value", lambda x: x["flow"]["total5_value"] < 0, reverse=False),
+        "外資買超金額": top("foreign5_value", lambda x: x["flow"]["foreign5_value"] > 0),
+        "投信買超金額": top("trust5_value", lambda x: x["flow"]["trust5_value"] > 0),
+        "外資連買": top("foreign_streak", lambda x: x["flow"]["foreign_streak"] >= cfg.get("flows", {}).get("streak_days", 3)),
+        "投信連買": top("trust_streak", lambda x: x["flow"]["trust_streak"] >= cfg.get("flows", {}).get("streak_days", 3)),
+        "籌碼集中": top("conc5", lambda x: "籌碼集中" in x["flow_signals"]),
+        "法人買、融資減": top("total5_value", lambda x: "法人買、融資減" in x["flow_signals"]),
+        "法人賣、融資增": top("margin_chg5_pct", lambda x: "法人賣、融資增" in x["flow_signals"]),
+        "基本面佳＋法人買": top("total5_value", lambda x: x["label"] == "買進" and (x["flow"]["total5_value"] or 0) > 0),
+        "成長潛力＋法人買": top("total5_value", lambda x: x.get("potential") and (x["flow"]["total5_value"] or 0) > 0),
+    }
+    return {"industries": ind_rows, "products": prod_rows, "lists": lists}
+
+
+def build(raw_companies, cfg, generated_at, themes=None, products=None, heat=None, flows=None):
     out = []
     for c in raw_companies:
         metrics, subs, score, label, cov, flags, up, dn = score_company(c, cfg)
@@ -280,6 +348,8 @@ def build(raw_companies, cfg, generated_at, themes=None, products=None, heat=Non
             "rev_hot": (c.get("rev_streak") or 0) >= cfg.get("revenue_streak", {}).get("min_months", 2),
             **dict(zip(("potential", "potential_rank", "potential_notes"), growth_potential(c, cfg))),
             "growth": {k: (c.get("growth") or {}).get(k) for k in ("avg3_yoy", "prev3_yoy", "accel", "all3_pos", "high12", "months", "hist")},
+            "flow": (flows or {}).get(c["code"]),
+            "flow_signals": flow_signals((flows or {}).get(c["code"]), cfg),
             "period": period,
             "metrics": {k: round(v, 2) for k, v in metrics.items()},
             "subs": {k: round(v) for k, v in subs.items()},
@@ -301,6 +371,7 @@ def build(raw_companies, cfg, generated_at, themes=None, products=None, heat=Non
 
     theme_groups = build_themes(out, themes or {})
     hot, pool = build_products(out, products or {}, heat or {})
+    flow_views = build_flow_views(out, cfg, theme_groups, hot, industries) if flows else None
 
     counts = {"營收連兩月成長": sum(1 for x in out if x["rev_hot"]), "營收成長潛力": sum(1 for x in out if x["potential"])}
     for x in out:
@@ -316,6 +387,7 @@ def build(raw_companies, cfg, generated_at, themes=None, products=None, heat=Non
         "themes": theme_groups,
         "products": hot,
         "products_meta": {"pool": pool, "days": (products or {}).get("heat_days", 5)},
+        "flows": flow_views,
     }
 
 
@@ -332,7 +404,14 @@ def main(src=None, dst=None):
     hist = json.loads(hpath.read_text(encoding="utf-8")) if hpath.exists() else {}
     heat = update_heat_history(payload["companies"], hist, products.get("heat_days", 5))
     hpath.write_text(json.dumps(hist, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    result = build(payload["companies"], cfg, payload["generated_at"], themes, products, heat)
+    fpath = src.parent / "flows.json"
+    flows, flow_meta = None, None
+    if fpath.exists():
+        fj = json.loads(fpath.read_text(encoding="utf-8"))
+        flows, flow_meta = fj.get("stocks"), fj.get("coverage")
+    result = build(payload["companies"], cfg, payload["generated_at"], themes, products, heat, flows)
+    if result.get("flows") is not None:
+        result["flows"]["coverage"] = flow_meta
     for t in result["products"]:
         if t["missing"]:
             print(f"[提醒] 題材「{t['name']}」找不到代號：{', '.join(t['missing'])}")

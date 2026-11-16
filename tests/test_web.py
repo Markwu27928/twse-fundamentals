@@ -55,6 +55,24 @@ def main():
     sample["counts"]["營收成長潛力"] = n_pot = len(pot)
     pot_names = [c["name"] for c in pot]
     sample["counts"]["營收連兩月成長"] = n_hot_rev = sum(1 for c in sample["companies"] if c["rev_hot"])
+    # 資金流向模擬資料
+    sys.path.insert(0, str(ROOT / "src"))
+    import score as sc
+    import random
+    rng = random.Random(3)
+    cfg = json.loads((ROOT / "config" / "scoring.json").read_text(encoding="utf-8"))
+    for c in sample["companies"]:
+        f5, t5 = rng.randint(-5000, 5000), rng.randint(-800, 800)
+        p = c.get("price") or 50
+        c["flow"] = {"n5": 5, "date": "2026-11-17", "foreign": f5 // 5, "trust": t5 // 5, "dealer": 10, "foreign5": f5, "trust5": t5,
+                     "dealer5": 50, "total5": f5 + t5 + 50, "foreign_streak": rng.choice([-2, 1, 3, 5]), "trust_streak": rng.choice([-1, 2, 4]),
+                     "total5_value": round((f5 + t5 + 50) * 1000 * p / 1e8, 2), "foreign5_value": round(f5 * 1000 * p / 1e8, 2),
+                     "trust5_value": round(t5 * 1000 * p / 1e8, 2), "conc5": round(rng.uniform(-1, 1.5), 3),
+                     "margin": 5000, "short": 300, "short_ratio": 6.0, "margin_chg5": rng.choice([-200, 150]), "margin_chg5_pct": rng.choice([-4.0, 8.0]), "margin_days": 5}
+        c["flow_signals"] = sc.flow_signals(c["flow"], cfg)
+    sample["flows"] = sc.build_flow_views(sample["companies"], cfg, sample.get("themes", {}), sample.get("products", []), sample["industries"])
+    global n_flow_lists
+    n_flow_lists = len(sample["flows"]["lists"])
     (tmp / "data.json").write_text(json.dumps(sample, ensure_ascii=False), encoding="utf-8")
     global data_has_themes, n_themes
     n_themes = len(sample.get("themes") or {})
@@ -191,6 +209,26 @@ def main():
         check("熱門產品：成交值由高到低", heats == sorted(heats, reverse=True), str(heats[:5]))
         check("熱門產品：卡片顯示主力產品", "主力產品：" in page.locator("details.co").first.inner_text())
         page.screenshot(path=str(shots / "shot_hot.png"))
+
+        # 資金流向
+        page.click("#v-flow")
+        check("資金流向分頁：顯示清單選單、隱藏其他控制", page.locator("#flow-pick").is_visible() and page.locator("#ctl-all").is_hidden() and page.locator("#r-score").is_hidden())
+        rows = page.locator("table.grp tr").count()
+        check("產業資金排行：表格依金額排序", rows > 5, f"({rows} 列)")
+        vals = [float(x) for x in page.locator("table.grp tr td:nth-child(2)").all_inner_texts()]
+        check("產業資金排行：法人合計由高到低", vals == sorted(vals, reverse=True), str(vals[:5]))
+        page.screenshot(path=str(shots / "shot_flow_ind.png"))
+        page.select_option("#flow-pick", index=1)
+        check("熱門題材資金排行", page.locator("table.grp tr").count() > 3)
+        n_opts = page.locator("#flow-pick option").count()
+        check("清單選單：2 個排行＋各股票清單", n_opts == 2 + n_flow_lists, f"({n_opts})")
+        page.select_option("#flow-pick", index=2)
+        n_cards = page.locator("details.co").count()
+        check("法人買超金額清單：最多 30 檔且有資金說明", 0 < n_cards <= 30 and "三大法人" in page.locator("details.co .flow").first.inner_text(), f"({n_cards})")
+        page.locator("details.co summary").first.click()
+        fb = page.locator("details.co").first.inner_text()
+        check("卡片明細：法人買賣超表與融資融券", "法人買賣超（張" in fb and "外資" in fb and "投信" in fb and "融資餘額" in fb and "券資比" in fb)
+        page.screenshot(path=str(shots / "shot_flow_list.png"))
 
         # 切回全市場，狀態保留
         page.click("#v-all")

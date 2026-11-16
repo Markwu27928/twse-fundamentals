@@ -155,5 +155,12 @@
       "14"
     ],
     "require_high12": true
+  },
+  "flows": {
+    "_說明": "資金流向訊號（不影響評分）。streak_days：外資或投信連續買超天數；conc_pct：近 5 日三大法人買超占發行股數 %；margin_up_pct：融資 5 日增加 %。list_size：各排行顯示檔數。",
+    "streak_days": 3,
+    "conc_pct": 0.5,
+    "margin_up_pct": 5,
+    "list_size": 30
   }
 }

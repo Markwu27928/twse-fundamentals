@@ -26,8 +26,8 @@ h1{font-size:18px;margin:6px 0 2px}
 .macro .verdict{margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .macro .small{color:var(--muted);font-size:12px}
 .vd-in{color:var(--buy);background:var(--buy-bg)}.vd-out{color:var(--sell);background:var(--sell-bg)}.vd-mid{color:var(--hold);background:var(--hold-bg)}
-.seg{display:flex;background:var(--hold-bg);border-radius:10px;padding:3px;gap:3px;margin:8px 0}
-.seg button{flex:1;border:0;background:transparent;color:var(--muted);padding:9px 2px;white-space:nowrap;border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
+.seg{display:flex;overflow-x:auto;scrollbar-width:none;background:var(--hold-bg);border-radius:10px;padding:3px;gap:3px;margin:8px 0}
+.seg button{flex:1 0 auto;min-width:64px;border:0;background:transparent;color:var(--muted);padding:9px 2px;white-space:nowrap;border-radius:8px;font:inherit;font-weight:600;cursor:pointer}
 .seg button[aria-pressed=true]{background:var(--card);color:var(--text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .controls{display:grid;gap:8px;margin:8px 0}
 .row{display:flex;gap:8px}
@@ -70,6 +70,12 @@ ul.pts{margin:4px 0;padding-left:18px;font-size:13px}
 .revtbl td:first-child,.revtbl th:first-child{text-align:left}
 .prod{font-size:12px;color:var(--accent);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .up{color:var(--buy)}.down{color:var(--sell)}
+.flow{font-size:12px;margin-top:2px;color:var(--muted)}
+.sig{display:inline-block;font-size:11px;font-weight:700;color:var(--accent);background:var(--hold-bg);border-radius:6px;padding:1px 6px;margin:2px 4px 0 0}
+.sig.warn{color:var(--sell);background:var(--sell-bg)}
+.grp{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.grp td,.grp th{padding:7px 8px;border-bottom:1px solid var(--line);text-align:right}
+.grp td:first-child,.grp th:first-child{text-align:left}
 .tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
 .tag{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--hold-bg);color:var(--muted)}
 button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);background:var(--card);color:var(--accent);border-radius:10px;font:inherit;font-weight:600}
@@ -88,6 +94,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
     <button id="v-top" aria-pressed="false">產業前三名</button>
     <button id="v-theme" aria-pressed="false">主題族群</button>
     <button id="v-hot" aria-pressed="false">熱門產品</button>
+    <button id="v-flow" aria-pressed="false">資金流向</button>
   </div>
 
   <div id="ctl-all" class="controls">
@@ -105,6 +112,9 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
     </div>
   </div>
 
+  <div id="ctl-flow" class="controls" hidden>
+    <select id="flow-pick" aria-label="資金流向清單"></select>
+  </div>
   <div id="ctl-top" class="controls" hidden>
     <select id="theme-pick" aria-label="族群" hidden></select>
     <div class="seg" role="group" aria-label="排名依據">
@@ -118,6 +128,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
   <div class="foot">
     評分為依設定檔規則計算的財報體質分數，並非預測股價漲跌，也不構成投資建議。<br>
     標籤顏色採台股習慣：買進為紅、賣出為綠。<br>
+    「資金流向」：三大法人買賣超與融資融券來自證交所、櫃買中心每日資料；金額以最新收盤價估算。「籌碼集中」為近 5 日法人買超占發行股數 ≥ 0.5%；「法人買、融資減」代表籌碼由散戶流向法人。<br>
     「營收成長潛力」：近 3 個月營收合計年增 ≥ 25%、比前 3 個月加速 10 個百分點以上、近 3 個月每月年增皆為正、最新月營收創近 12 個月新高、月營收 ≥ 1 億且本業未虧損；建材營造業不適用（不影響評分，供篩選參考）。<br>
     「營收連兩月成長」：最近兩個月的單月營收，月增率與年增率都大於 0，評分另加分。<br>
     ROE 以累計淨利年化估算。金融業（銀行、金控、證券、保險）不評毛利率、負債比、流動比。<br>
@@ -147,13 +158,15 @@ const fmtMcap = (v) => v == null ? "—" : v >= 10000 ? (v / 10000).toFixed(2) +
 const rocDate = (d) => { const m = /^(\d{3})(\d{2})(\d{2})$/.exec(d || ""); return m ? `${+m[1] + 1911}/${m[2]}/${m[3]}` : "—"; };
 const fmtNum = (v, d = 1) => v == null ? "—" : Number(v).toFixed(d);
 
-function card(c, rank, product) {
+function wan(v) { return v == null ? "—" : `${v > 0 ? "+" : ""}${Math.round(v).toLocaleString()}`; }
+function card(c, rank, product, flowLine) {
   const sum = h("summary", {},
     rank ? h("span", { class: "rank" }, rank) : null,
     h("div", { class: "main" },
       h("div", { class: "nm" }, c.name, h("small", {}, c.code), c.rev_hot ? h("span", { class: "hot" }, `營收連${c.rev.streak}月↑`) : null,
         c.potential ? h("span", { class: "pot" }, "成長潛力") : null),
       product ? h("div", { class: "prod" }, "主力產品：" + product) : null,
+      flowLine ? h("div", { class: "flow" }, flowLine) : null,
       h("div", { class: "meta" }, `${c.industry}・${c.market}・市值 ${fmtMcap(c.mcap)}` +
         (c.stale ? "・沿用前次財報" : "") +
         (c.label !== "資料不足" && c.coverage < 0.7 ? "・資料涵蓋度低" : ""))),
@@ -196,6 +209,26 @@ function card(c, rank, product) {
         row(c.rev.month, c.rev.mom, c.rev.yoy),
         c.rev.prev_month ? row(c.rev.prev_month, c.rev.prev_mom, c.rev.prev_yoy) : h("tr", {}, h("td", { colspan: "3" }, "上個月資料尚未取得"))));
   }
+  const F = c.flow;
+  if (F && F.n5) {
+    body.append(h("h4", {}, `法人買賣超（張；近 ${F.n5} 個交易日至 ${F.date.slice(5)}）`),
+      h("table", { class: "revtbl" },
+        h("tr", {}, h("th", {}, ""), h("th", {}, "當日"), h("th", {}, `${F.n5} 日`), h("th", {}, "連續")),
+        h("tr", {}, h("td", {}, "外資"), h("td", {}, netCell(F.foreign)), h("td", {}, netCell(F.foreign5)), h("td", {}, streakTxt(F.foreign_streak))),
+        h("tr", {}, h("td", {}, "投信"), h("td", {}, netCell(F.trust)), h("td", {}, netCell(F.trust5)), h("td", {}, streakTxt(F.trust_streak))),
+        h("tr", {}, h("td", {}, "自營商"), h("td", {}, netCell(F.dealer)), h("td", {}, netCell(F.dealer5)), h("td", {}, ""))));
+    const extra = [];
+    if (F.total5_value != null) extra.push(`三大法人 ${F.n5} 日約 ${F.total5_value > 0 ? "+" : ""}${F.total5_value.toFixed(1)} 億`);
+    if (F.conc5 != null) extra.push(`占股本 ${F.conc5.toFixed(2)}%`);
+    if (extra.length) body.append(h("div", { class: "meta", style: "margin-top:4px" }, extra.join("，")));
+  }
+  if (F && F.margin != null) {
+    body.append(h("h4", {}, "融資融券（張）"), h("div", { class: "meta" },
+      `融資餘額 ${F.margin.toLocaleString()}` + (F.margin_chg5 != null ? `（${F.margin_days} 日 ${wan(F.margin_chg5)}${F.margin_chg5_pct != null ? `，${F.margin_chg5_pct > 0 ? "+" : ""}${F.margin_chg5_pct}%` : ""}）` : "") +
+      `；融券餘額 ${F.short.toLocaleString()}` + (F.short_ratio != null ? `；券資比 ${F.short_ratio}%` : "")));
+  }
+  if (c.flow_signals && c.flow_signals.length)
+    body.append(h("div", {}, c.flow_signals.map((t) => h("span", { class: "sig" + (t.includes("賣、融資增") ? " warn" : "") }, t))));
   if (c.themes && c.themes.length) body.append(h("h4", {}, "所屬族群"), h("div", { class: "tags" }, c.themes.map((t) => h("span", { class: "tag" }, t))));
   if (c.strengths.length) body.append(h("h4", {}, "優勢"), h("ul", { class: "pts" }, c.strengths.map((t) => h("li", {}, t))));
   if (c.weaknesses.length) body.append(h("h4", {}, "弱點"), h("ul", { class: "pts" }, c.weaknesses.map((t) => h("li", {}, t))));
@@ -276,10 +309,45 @@ function renderHot() {
   }
 }
 
+function netCell(v) { return v == null ? "—" : h("span", { class: v > 0 ? "up" : v < 0 ? "down" : "" }, wan(v)); }
+function streakTxt(n) { return !n ? "—" : n > 0 ? `連買 ${n} 天` : `連賣 ${-n} 天`; }
+
+const FLOW_GROUPS = ["產業資金排行", "熱門題材資金排行"];
+function flowMetric(name, c) {
+  const F = c.flow || {};
+  const v = (x) => x == null ? "—" : `${x > 0 ? "+" : ""}${x.toFixed(1)} 億`;
+  if (name.startsWith("外資")) return `外資 ${F.n5} 日 ${v(F.foreign5_value)}，${streakTxt(F.foreign_streak)}`;
+  if (name.startsWith("投信")) return `投信 ${F.n5} 日 ${v(F.trust5_value)}，${streakTxt(F.trust_streak)}`;
+  if (name === "籌碼集中") return `法人 ${F.n5} 日買超占股本 ${F.conc5?.toFixed(2)}%（${v(F.total5_value)}）`;
+  if (name.includes("融資")) return `法人 ${F.n5} 日 ${v(F.total5_value)}，融資 ${F.margin_days || 0} 日 ${wan(F.margin_chg5)} 張（${F.margin_chg5_pct ?? "—"}%）`;
+  return `三大法人 ${F.n5} 日 ${v(F.total5_value)}（外資 ${v(F.foreign5_value)}、投信 ${v(F.trust5_value)}）`;
+}
+function renderFlow() {
+  const FL = D.flows;
+  const list = $("list"); list.replaceChildren();
+  if (!FL) { $("count").textContent = "資金流向資料尚未產生"; return; }
+  const pick = st.flow || FLOW_GROUPS[0];
+  if (FLOW_GROUPS.includes(pick)) {
+    const rows = pick === FLOW_GROUPS[0] ? FL.industries : FL.products;
+    $("count").textContent = `近 5 個交易日三大法人淨買超金額（以收盤價估算，單位：億元）`;
+    list.append(h("table", { class: "grp" },
+      h("tr", {}, h("th", {}, pick === FLOW_GROUPS[0] ? "產業" : "題材"), h("th", {}, "法人合計"), h("th", {}, "外資"), h("th", {}, "投信")),
+      rows.map((r) => h("tr", {}, h("td", {}, r.name), h("td", {}, netYi(r.total)), h("td", {}, netYi(r.foreign)), h("td", {}, netYi(r.trust))))));
+    return;
+  }
+  const codes = (FL.lists[pick] || []).filter((c) => BY[c]);
+  $("count").textContent = `${pick}（${codes.length} 檔）`;
+  codes.forEach((code, i) => list.append(card(BY[code], i + 1, null, flowMetric(pick, BY[code]))));
+}
+function netYi(v) { return h("span", { class: v > 0 ? "up" : v < 0 ? "down" : "" }, `${v > 0 ? "+" : ""}${v.toFixed(1)}`); }
+
 function render() {
   $("ctl-all").hidden = st.view !== "all";
   $("ctl-top").hidden = st.view === "all";
   $("theme-pick").hidden = st.view !== "theme";
+  $("ctl-flow").hidden = st.view !== "flow";
+  if (st.view === "flow") $("ctl-top").hidden = true;
+  $("v-flow").setAttribute("aria-pressed", st.view === "flow");
   $("v-theme").setAttribute("aria-pressed", st.view === "theme");
   $("v-hot").setAttribute("aria-pressed", st.view === "hot");
   $("v-all").setAttribute("aria-pressed", st.view === "all");
@@ -292,7 +360,8 @@ function render() {
   if (st.view === "all") renderAll();
   else if (st.view === "top") renderTop();
   else if (st.view === "theme") renderTheme();
-  else renderHot();
+  else if (st.view === "hot") renderHot();
+  else renderFlow();
 }
 
 function pctSpan(v, d = 2) {
@@ -353,6 +422,12 @@ async function init() {
   $("v-top").onclick = () => { st.view = "top"; render(); };
   $("v-theme").onclick = () => { st.view = "theme"; render(); };
   $("v-hot").onclick = () => { st.view = "hot"; render(); };
+  $("v-flow").onclick = () => { st.view = "flow"; render(); };
+  if (D.flows) {
+    $("flow-pick").append(...FLOW_GROUPS.map((n) => h("option", { value: n }, n)),
+      ...Object.keys(D.flows.lists).map((n) => h("option", { value: n }, `${n}（${D.flows.lists[n].length}）`)));
+    $("flow-pick").onchange = (e) => { st.flow = e.target.value; render(); };
+  }
   $("theme-pick").append(h("option", { value: "全部" }, "全部族群"), ...Object.keys(D.themes || {}).map((n) => h("option", { value: n }, n)));
   $("theme-pick").onchange = (e) => { st.theme = e.target.value; render(); };
   $("r-score").onclick = () => { st.rankBy = "score"; render(); };

@@ -32,6 +32,7 @@ KEEP_DAYS = 20
 LOOKBACK_CAL_DAYS = 16
 MIN_ROWS = 200
 MIN_CHECK = 0.95
+PREFERRED = {}  # (市場, 種類) -> 上次成功的來源序號（執行期間有效，並存入歷史）
 
 
 def urls(market, kind, d):
@@ -172,6 +173,16 @@ def map_inst(names):
     tot = [i for i, n in enumerate(cols) if ("三大法人" in n or "合計" == n[:2]) and any_net(n)]
     if tot:
         m["total"] = [tot[0]]
+    # 櫃買中心格式：欄位名只有「買賣超股數」重複 7 組、沒有身分名稱。依網頁順序：
+    # 外資及陸資(不含外資自營商)、外資自營商、外資及陸資合計、投信、自營商(自行買賣)、自營商(避險)、自營商合計
+    if not {"foreign", "trust", "dealer"} <= set(m):
+        generic = [i for i, n in enumerate(cols) if re.sub(r"#\d+$", "", n) in ("買賣超股數", "買賣超", "買賣超(股)")]
+        if len(generic) == 7:
+            g = generic
+            m = {"foreign": [g[2]], "trust": [g[3]], "dealer": [g[6]],
+                 "_fx_parts": [g[0], g[1]], "_dl_parts": [g[4], g[5]]}
+            if tot:
+                m["total"] = [tot[0]]
     return m
 
 
@@ -198,7 +209,13 @@ def parse_inst(j):
             data[code] = [f, t, d]
             if "total" in m and vals["total"][0] is not None:
                 checked += 1
-                ok += abs(f + t + d - vals["total"][0]) <= 1
+                good = abs(f + t + d - vals["total"][0]) <= 1
+                # 依位置對應時，再核對 外資分項相加＝外資合計、自營商分項相加＝自營商合計
+                for part, whole in (("_fx_parts", f), ("_dl_parts", d)):
+                    if part in vals:
+                        ps = vals[part]
+                        good = good and all(x is not None for x in ps) and abs(sum(ps) - whole) <= 1
+                ok += good
         diag = {"fields": names, "map": {k: [names[i] for i in v] for k, v in m.items()}, "rows": len(data),
                 "check": round(ok / checked, 4) if checked else None}
         if best is None or len(data) > best[1]["rows"]:
@@ -224,6 +241,12 @@ def map_margin(names):
         m = {"mb": idx("買進", group="融資"), "ms": idx("賣出", group="融資"), "mr": idx("現金償還", group="融資"),
              "mprev": idx("前日餘額", group="融資"), "mbal": idx("今日餘額", group="融資") or idx("餘額", group="融資", nth=2),
              "sbal": idx("今日餘額", group="融券") or idx("餘額", group="融券", nth=2), "sprev": idx("前日餘額", group="融券")}
+    elif any(n.startswith("資餘額") for n in names) and any(n.startswith("券餘額") for n in names):
+        # 櫃買中心格式：前資餘額(張)、資買、資賣、現償、資餘額、前券餘額(張)、券賣、券買、券償、券餘額
+        def ex(name):
+            return next((i for i, n in enumerate(names) if n == name or n.startswith(name + "(")), None)
+        m = {"mb": ex("資買"), "ms": ex("資賣"), "mr": ex("現償"), "mprev": ex("前資餘額"), "mbal": ex("資餘額"),
+             "sprev": ex("前券餘額"), "sbal": ex("券餘額")}
     elif eng:
         def e(*must):
             return next((i for i, n in enumerate(names) if all(x.lower() in n.lower() for x in must)), None)
@@ -313,7 +336,11 @@ def fetch_one(market, kind, d):
     """回傳 (資料 or None, 診斷, 狀態)；狀態：ok / nodata / fail。"""
     parser = parse_inst if kind == "inst" else parse_margin
     tried, saw_nodata = [], False
-    for u in urls(market, kind, d):
+    cands = urls(market, kind, d)
+    pi = PREFERRED.get((market, kind))
+    if pi is not None and 0 <= pi < len(cands):
+        cands = [cands[pi]] + [c for i, c in enumerate(cands) if i != pi]
+    for u in cands:
         is_open = u.startswith("OPEN:")
         url = u[5:] if is_open else u
         try:
@@ -335,9 +362,11 @@ def fetch_one(market, kind, d):
         data, diag = parser(j)
         diag["url"] = url
         tried.append(diag)
-        if len(data) >= MIN_ROWS and (diag.get("check") is None or diag["check"] >= MIN_CHECK):
-            if diag.get("check") is None:
-                diag["warning"] = "無法核對（缺合計或前日餘額欄位）"
+        if diag.get("check") is None and data:
+            diag["rejected"] = "無法核對（缺合計或前日餘額欄位），不採用"
+        if len(data) >= MIN_ROWS and diag.get("check") is not None and diag["check"] >= MIN_CHECK:
+            # 記住可用的來源，下次優先嘗試
+            PREFERRED[(market, kind)] = urls(market, kind, d).index(u)
             return data, tried, "ok"
         time.sleep(2)
     return None, tried, "nodata" if saw_nodata else "fail"
@@ -421,6 +450,9 @@ def candidate_days(hist, today):
 def main():
     hist = json.loads(HIST.read_text(encoding="utf-8")) if HIST.exists() else {}
     hist.setdefault("inst", {}), hist.setdefault("margin", {}), hist.setdefault("closed", [])
+    for k, v in (hist.get("preferred") or {}).items():
+        mk, kd = k.split("/")
+        PREFERRED[(mk, kd)] = v
     today = datetime.datetime.now(TZ).date()
     diag = {"generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"), "runs": [], "errors": []}
 
@@ -453,6 +485,7 @@ def main():
             for old in sorted(hist[kind][market])[:-KEEP_DAYS]:
                 del hist[kind][market][old]
     hist["closed"] = sorted(set(hist["closed"]))[-60:]
+    hist["preferred"] = {f"{mk}/{kd}": v for (mk, kd), v in PREFERRED.items()}
     HIST.write_text(json.dumps(hist, separators=(",", ":")), encoding="utf-8")
 
     companies = json.loads((ROOT / "data" / "companies.json").read_text(encoding="utf-8"))["companies"]

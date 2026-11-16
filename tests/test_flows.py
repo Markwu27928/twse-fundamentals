@@ -74,6 +74,55 @@ def test_inst():
     check("法人：櫃買格式（有外資合計欄時不重複相加）", d2["5000"] == [1010.0, -300.0, -2.0] and g2["check"] == 1.0, f"{d2.get('5000')} {g2['map']}")
 
 
+TPEX_INST = ["代號", "名稱"] + ["買進股數", "賣出股數", "買賣超股數"] * 7 + ["三大法人買賣超股數合計"]
+
+
+def tpex_inst_row(code, fx, fxd, tr, dself, dhedge, wrong_order=False):
+    fx_all, d_all = fx + fxd, dself + dhedge
+    groups = [fx, fxd, fx_all, tr, dself, dhedge, d_all]
+    if wrong_order:  # 假設網站順序其實不同：投信與外資合計互換
+        groups = [fx, fxd, tr, fx_all, dself, dhedge, d_all]
+    row = [code, "x"]
+    for g in groups:
+        row += ["0", "0", f"{g:,}"]
+    return row + [f"{fx_all + tr + d_all:,}"]
+
+
+def test_tpex_inst():
+    rows = [tpex_inst_row(str(5000 + i), 1000 * (i - 120), 3 * i, 200 * (i % 5 - 2), 40, -15) for i in range(250)]
+    data, diag = flows.parse_inst({"stat": "ok", "tables": [{"fields": TPEX_INST, "data": rows}]})
+    check("上櫃法人（真實欄位名、7 組同名）：依位置對應", data["5010"] == [1000 * (10 - 120) + 30, 200 * (10 % 5 - 2), 25] and diag["check"] == 1.0, f"{data.get('5010')} {diag['map']}")
+    bad = [tpex_inst_row(str(5000 + i), 1000 * (i - 120), 3 * i, 200 * (i % 5 - 2), 40, -15, wrong_order=True) for i in range(250)]
+    _, d2 = flows.parse_inst({"stat": "ok", "tables": [{"fields": TPEX_INST, "data": bad}]})
+    check("上櫃法人：若網站順序與假設不同，核對不會通過", d2["check"] < flows.MIN_CHECK, f"({d2['check']})")
+
+
+TPEX_MARGIN = ["代號", "名稱", "前資餘額(張)", "資買", "資賣", "現償", "資餘額", "資屬證金", "資使用率(%)", "資限額",
+               "前券餘額(張)", "券賣", "券買", "券償", "券餘額", "券屬證金", "券使用率(%)", "券限額", "資券相抵(張)", "備註"]
+
+
+def test_tpex_margin():
+    rows = []
+    for i in range(250):
+        prev, b, s_, r = 3000 + i, 50, 30, 2
+        rows.append([str(5000 + i), "x", f"{prev:,}", str(b), str(s_), str(r), f"{prev + b - s_ - r:,}", "0", "1.2", "9,999",
+                     "120", "5", "3", "0", "122", "0", "0.1", "9,999", "0", ""])
+    data, diag = flows.parse_margin({"stat": "ok", "tables": [{"fields": TPEX_MARGIN, "data": rows}]})
+    check("上櫃融資融券（真實欄位名、簡稱）：資餘額不會誤抓前資餘額", data["5000"] == [3018.0, 122.0] and diag["check"] == 1.0, f"{data.get('5000')} {diag['map']}")
+
+
+def test_unverifiable():
+    import datetime
+    op = [{"Date": "1151116", "SecuritiesCompanyCode": str(5000 + i), "MarginPurchaseBalancePreviousDay": "100", "ShortSaleBalancePreviousDay": "5"} for i in range(300)]
+    orig = flows.get_json
+    flows.get_json = lambda url: op if "openapi" in url else {"stat": "ok", "tables": [{"fields": ["x"], "data": [["1"]]}]}
+    try:
+        data, tried, status = flows.fetch_one("上櫃", "margin", datetime.date(2026, 11, 16))
+    finally:
+        flows.get_json = orig
+    check("無法核對的來源（缺前日餘額或買賣欄位）一律不採用", data is None and status == "fail", str([t.get("rejected") or t.get("error", "")[:20] for t in tried]))
+
+
 def test_margin():
     data, diag = flows.parse_margin(margn())
     check("融資融券：解析有分組表頭（融資／融券）的格式", len(data) == 300 and data["1100"] == [5000 + 100 - 80 - 5, 290.0], f"{data.get('1100')} {diag['map']}")
@@ -155,6 +204,9 @@ def test_fetch_one(monkey=None):
 
 if __name__ == "__main__":
     test_inst()
+    test_tpex_inst()
+    test_tpex_margin()
+    test_unverifiable()
     test_margin()
     test_nodata()
     test_summary()
