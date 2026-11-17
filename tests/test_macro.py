@@ -1,5 +1,6 @@
 """匯率與外資判讀的模擬測試。執行：python tests/test_macro.py"""
 import datetime
+import json
 import pathlib
 import sys
 
@@ -81,10 +82,28 @@ def test_cbc():
     s = macro.summarize(h, CFG, today)
     check("有央行資料時用央行收盤價並標示來源", s["fx"]["source"] == "cbc" and s["fx"]["rate"] == 31.42 and "央行" in s["fx"]["source_label"])
     check("央行單日變動：31.420 對 31.312", s["fx"]["change_1d_pct"] == round((31.42 / 31.312 - 1) * 100, 2))
-    old = {k: v for k, v in r.items() if k <= "2026-11-10"} | {"2026-11-03": 31.2, "2026-11-04": 31.1, "2026-11-05": 31.0, "2026-11-06": 31.0}
-    s2 = macro.summarize({"fx_cbc": old, "fx_ref": {"2026-11-17": 31.40, "2026-11-10": 31.0}, "foreign": {"2026-11-17": 1.0}}, CFG, today)
-    check("央行資料超過 5 天沒更新：改用參考價並標示非官方", s2["fx"]["source"] == "ref" and "非官方" in s2["fx"]["source_label"] and s2["fx"]["rate"] == 31.40)
-    check("參考價的變動只和參考價比較，不混用央行數字", s2["fx"]["change_1d_pct"] == round((31.40 / 31.0 - 1) * 100, 2))
+    old = {k: v for k, v in r.items() if k <= "2026-11-10"}
+    s2 = macro.summarize({"fx_cbc": old, "fx_ref": {"2026-11-17": 31.40}, "foreign": {"2026-11-17": -900.0}}, CFG, today)
+    check("官方資料超過 5 天沒更新：匯率顯示暫缺、不用其他報價替代", s2["fx"] is None, str(s2["fx"]))
+    check("匯率暫缺時：只用外資判讀並說明", s2["verdict"]["label"] == "偏匯出" and "匯率資料不足" in s2["verdict"]["detail"])
+
+    # 央行開放資料 API：格式未知，測多種可能格式
+    rows = [("2026/11/17", "31.420"), ("2026/11/16", "31.312"), ("2026/11/13", "31.010"), ("2026/11/12", "30.985"), ("2026/11/11", "31.002")]
+    j1 = json.dumps([{"日期": d, "NTD/USD": v} for d, v in rows], ensure_ascii=False)
+    j2 = json.dumps({"result": {"records": [{"Date": d.replace("/", ""), "Value": float(v)} for d, v in rows]}})
+    j3 = json.dumps({"data": [[d, v] for d, v in rows]})
+    txt = "日期,NTD/USD\n" + "\n".join(f"{d},{v}" for d, v in rows)
+    for name, c in (("JSON 物件陣列（中文欄位）", j1), ("巢狀 JSON（西元 8 碼日期、數值）", j2), ("JSON 二維陣列", j3), ("CSV 純文字", txt)):
+        r2 = macro.parse_cbc_api(c)
+        check(f"央行 API 格式：{name}", r2.get("2026-11-17") == 31.42 and r2.get("2026-11-11") == 31.002 and len(r2) == 5, str(r2))
+    try:
+        macro.parse_cbc_api(json.dumps({"message": "error"}))
+        ok = False
+    except RuntimeError:
+        ok = True
+    check("央行 API 回傳錯誤訊息時報錯", ok)
+    j4 = json.dumps([{"日期": d, "NTD/USD": v, "筆數": 3409} for d, v in rows], ensure_ascii=False)
+    check("央行 API：不把其他數字欄位誤當匯率", len(macro.parse_cbc_api(j4)) == 5)
 
 
 

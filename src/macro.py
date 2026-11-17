@@ -3,7 +3,7 @@
 
 資料來源：
   外資買賣超：證交所「三大法人買賣金額統計表」BFI82U（外資及陸資＋外資自營商，上市市場）
-  匯率：免費每日參考匯率（currency-api，備援 open.er-api.com）；有日期版本，可回補歷史
+  匯率：中央銀行公布的新臺幣/美元銀行間收盤匯率（開放資料 API，備援央行網頁）；官方資料暫缺時不以其他報價替代
 
 判讀規則（可在 config/macro.json 調整門檻）：
   資金訊號：近 N 日外資累計買賣超 ≥ +門檻 → +1；≤ −門檻 → −1；其餘 0
@@ -31,7 +31,8 @@ UA = {"User-Agent": "Mozilla/5.0 (fundamentals-bot)", "Accept": "application/jso
 
 BFI82U = "https://www.twse.com.tw/rwd/zh/fund/BFI82U?type=day&dayDate={d}&response=json"
 # 官方：中央銀行公布的新臺幣/美元銀行間收盤匯率（台北外匯經紀公司資料），每個營業日 16:00–17:00 公布一次
-CBC_URL = "https://www.cbc.gov.tw/tw/lp-645-1-6-40.html"
+CBC_API = "https://cpx.cbc.gov.tw/api/OpenData/FTDOpenData_Day"   # 政府資料開放平臺 dataset 7232（日資料）
+CBC_URL = "https://www.cbc.gov.tw/tw/lp-645-1-6-40.html"            # 備援：央行網頁（曾停止更新，過舊不採用）
 CBC_MAX_STALE_DAYS = 5  # 央行最新資料超過這麼多天沒更新，視為抓取異常，改用備援
 FX_URLS = [
     "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{d}/v1/currencies/usd.json",
@@ -110,6 +111,82 @@ def parse_cbc(html):
     return out
 
 
+def _date_iso(v):
+    s = str(v).strip()
+    m = re.fullmatch(r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:[ T].*)?", s) or re.fullmatch(r"(\d{4})(\d{2})(\d{2})", s)
+    if not m:
+        return None
+    y, mo, d = (int(x) for x in m.groups())
+    try:
+        return datetime.date(y, mo, d).isoformat()
+    except ValueError:
+        return None
+
+
+def parse_cbc_api(content):
+    """央行開放資料 API（格式可能是 JSON 或純文字）-> {'YYYY-MM-DD': 匯率}。
+    JSON：找出含「日期」與「20–45 之間數值」的資料列；其他格式：用文字比對日期與匯率。"""
+    out = {}
+
+    def walk(o):
+        if isinstance(o, dict):
+            vals = list(o.values())
+            ds = [_date_iso(v) for v in vals if isinstance(v, (str, int))]
+            ds = [d for d in ds if d]
+            nums = []
+            for k, v in o.items():
+                if isinstance(v, (int, float, str)) and _date_iso(v) is None:
+                    try:
+                        x = float(str(v).replace(",", ""))
+                    except ValueError:
+                        continue
+                    if 20 <= x <= 45:
+                        nums.append(x)
+            if len(ds) == 1 and len(nums) == 1:
+                out[ds[0]] = nums[0]
+            else:
+                for v in vals:
+                    walk(v)
+        elif isinstance(o, list):
+            if len(o) == 2 and all(not isinstance(x, (list, dict)) for x in o):
+                d = _date_iso(o[0])
+                try:
+                    x = float(str(o[1]).replace(",", ""))
+                except ValueError:
+                    x = None
+                if d and x is not None and 20 <= x <= 45:
+                    out[d] = x
+                    return
+            for v in o:
+                walk(v)
+    try:
+        walk(json.loads(content))
+    except ValueError:
+        text = re.sub(r"<[^>]+>", " ", content)
+        for y, m, d, v in re.findall(r"(\d{4})[/-](\d{1,2})[/-](\d{1,2})\D{1,40}?(\d{2}\.\d{2,4})(?!\d)", text):
+            x = float(v)
+            if 20 <= x <= 45:
+                out[datetime.date(int(y), int(m), int(d)).isoformat()] = x
+    if len(out) < 5:
+        raise RuntimeError(f"央行 API 只解析到 {len(out)} 筆匯率，格式可能不同：{content[:200]!r}")
+    return out
+
+
+def fetch_cbc_api():
+    last = None
+    for i in range(3):
+        try:
+            r = requests.get(CBC_API, headers={"User-Agent": UA["User-Agent"], "Accept": "application/json, text/plain, */*"}, timeout=60)
+            r.raise_for_status()
+            r.encoding = r.encoding or "utf-8"
+            print(f"[匯率] 央行 API 回應前 160 字：{r.text[:160]!r}")
+            return parse_cbc_api(r.text)
+        except Exception as e:  # noqa: BLE001
+            last = e
+            time.sleep(3 * (i + 1))
+    raise RuntimeError(f"央行 API 抓取失敗：{last}")
+
+
 def fetch_cbc():
     last = None
     for i in range(3):
@@ -160,16 +237,11 @@ def summarize(hist, cfg, today):
     days = cfg["days"]
     out = {"fx": None, "foreign": None, "verdict": None}
 
-    # 優先用央行收盤匯率；央行資料太舊（抓取異常）時才用國際參考價。兩者不混合計算。
+    # 只用央行公布的銀行間收盤匯率；最新一筆過舊（抓取異常）時視為暫缺。
     src = "cbc"
-    fx = hist.get("fx_cbc", {})
-    ref = hist.get("fx_ref", {})
-    if fx and today is not None:
-        stale = (today - datetime.date.fromisoformat(max(fx))).days
-        if stale > CBC_MAX_STALE_DAYS and ref and max(ref) > max(fx):
-            fx, src = ref, "ref"
-    elif not fx:
-        fx, src = ref, "ref"
+    fx = dict(hist.get("fx_cbc", {}))
+    if fx and today is not None and (today - datetime.date.fromisoformat(max(fx))).days > CBC_MAX_STALE_DAYS:
+        fx = {}
     if fx:
         ds = sorted(fx)
         last = ds[-1]
@@ -182,7 +254,7 @@ def summarize(hist, cfg, today):
             "change_win_pct": round((fx[last] / fx[base_d] - 1) * 100, 2) if base_d else None,
             "win_from": base_d,
             "source": src,
-            "source_label": "央行公布銀行間收盤匯率" if src == "cbc" else "國際參考匯率（非官方收盤，央行資料暫缺）",
+            "source_label": "央行公布銀行間收盤匯率",
         }
 
     fr = hist.get("foreign", {})
@@ -230,10 +302,8 @@ def main():
     cfg = json.loads((ROOT / "config" / "macro.json").read_text(encoding="utf-8"))
     hist = json.loads(HIST.read_text(encoding="utf-8")) if HIST.exists() else {}
     hist.setdefault("foreign", {}), hist.setdefault("closed", [])
-    # 舊版的 fx（國際參考價）改存為 fx_ref，不與官方收盤價混用
-    if "fx" in hist:
-        hist.setdefault("fx_ref", {}).update(hist.pop("fx"))
-    hist.setdefault("fx_cbc", {}), hist.setdefault("fx_ref", {})
+    hist.pop("fx", None), hist.pop("fx_ref", None)   # 舊版的國際參考價不再使用
+    hist.setdefault("fx_cbc", {})
     today = datetime.datetime.now(TZ).date()
     errors = []
 
@@ -252,22 +322,26 @@ def main():
             print(f"[警告] 外資 {d}：{e}", file=sys.stderr)
         time.sleep(3)
 
-    # 匯率：央行銀行間收盤匯率（官方，含近 40 個營業日）；失敗時抓國際參考價備援
-    try:
-        cbc = fetch_cbc()
-        hist["fx_cbc"].update(cbc)
-        last = max(cbc)
-        print(f"[匯率] 央行收盤 {last} USD/TWD {cbc[last]}（本次取得 {len(cbc)} 個營業日）")
-    except Exception as e:  # noqa: BLE001
-        errors.append(f"央行匯率：{e}")
-        print(f"[警告] 央行匯率：{e}，改用國際參考價", file=sys.stderr)
+    # 匯率：只用官方的央行銀行間收盤匯率。API 為主、央行網頁備援；最新日期過舊的來源不採用。
+    # 官方資料都拿不到時顯示「暫缺」，判讀只看外資買賣超（國際參考價與官方收盤價可能差很多，不使用）。
+    got = None
+    for name, fn in (("央行開放資料 API", fetch_cbc_api), ("央行網頁", fetch_cbc)):
         try:
-            d, rate, src = fetch_fx("latest")
-            hist["fx_ref"][d] = rate
-            print(f"[匯率] 參考價 {d} USD/TWD {rate}（{src}）")
-        except Exception as e2:  # noqa: BLE001
-            errors.append(f"匯率參考價：{e2}")
-    for k in ("fx_cbc", "fx_ref", "foreign"):
+            data = fn()
+            last = max(data)
+            stale = (today - datetime.date.fromisoformat(last)).days
+            if stale > CBC_MAX_STALE_DAYS:
+                raise RuntimeError(f"最新資料 {last} 已超過 {CBC_MAX_STALE_DAYS} 天，不採用")
+            hist["fx_cbc"].update(data)
+            got = name
+            print(f"[匯率] {name}：{last} USD/TWD {data[last]}（取得 {len(data)} 筆）")
+            break
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"{name}：{e}")
+            print(f"[警告] {name}：{e}", file=sys.stderr)
+    if not got:
+        print("[警告] 官方收盤匯率暫缺", file=sys.stderr)
+    for k in ("fx_cbc", "foreign"):
         for old in sorted(hist[k])[:-60]:
             del hist[k][old]
     hist["closed"] = sorted(set(hist["closed"]))[-60:]
