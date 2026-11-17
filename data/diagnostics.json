@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-11-17T09:34:29+00:00",
+ "generated_at": "2026-11-17T10:40:09+00:00",
  "errors": [],
  "markets": {
   "上市": {
@@ -1370,7 +1370,7 @@
       "IssueShares"
      ],
      "sample": {
-      "Date": "1151116",
+      "Date": "1151117",
       "SecuritiesCompanyCode": "1240",
       "CompanyName": "茂生農經股份有限公司",
       "CompanyAbbreviation": "茂生農經",
@@ -2366,13 +2366,13 @@
       "PriceBookRatio"
      ],
      "sample": {
-      "Date": "1151116",
+      "Date": "1151117",
       "SecuritiesCompanyCode": "1240",
       "CompanyName": "茂生農經",
-      "PriceEarningRatio": "11.67",
+      "PriceEarningRatio": "11.70",
       "DividendPerShare": "0.50000000",
       "YieldRatio": "0.93",
-      "PriceBookRatio": "1.64"
+      "PriceBookRatio": "1.65"
      },
      "code_key": "SecuritiesCompanyCode",
      "matched_companies": 896
