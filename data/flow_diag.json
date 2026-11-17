@@ -1,8 +1,8 @@
 {
- "generated_at": "2026-11-16T16:37:17+00:00",
+ "generated_at": "2026-11-17T09:28:57+00:00",
  "runs": [
   {
-   "date": "2026-11-16",
+   "date": "2026-11-17",
    "market": "上市",
    "kind": "inst",
    "status": "ok",
@@ -44,71 +44,53 @@
        "三大法人買賣超股數"
       ]
      },
-     "rows": 1079,
+     "rows": 1080,
      "check": 1.0,
-     "excluded_n": 273,
-     "excluded_foreign_shares": -1164509967.0,
+     "excluded_n": 275,
+     "excluded_foreign_shares": -210695448.0,
      "excluded_top": [
       [
-       "00406A",
-       -318577074.0
-      ],
-      [
        "00403A",
-       -169644825.0
-      ],
-      [
-       "00981A",
-       -128599297.0
+       -76732411.0
       ],
       [
        "0050",
-       -111815510.0
+       -55584414.0
       ],
       [
-       "00685L",
-       -43490371.0
+       "00981A",
+       -51572974.0
       ],
       [
-       "00400A",
-       -41437776.0
+       "00406A",
+       -50852509.0
       ],
       [
-       "00992A",
-       -39747122.0
-      ],
-      [
-       "00407A",
-       -36068550.0
-      ],
-      [
-       "00405A",
-       -33021400.0
+       "00712",
+       17568000.0
       ],
       [
        "00991A",
-       -25955002.0
+       -16726038.0
+      ],
+      [
+       "009828",
+       -13845500.0
+      ],
+      [
+       "00988A",
+       11226200.0
+      ],
+      [
+       "00992A",
+       -10300562.0
+      ],
+      [
+       "00415A",
+       -7927999.0
       ]
      ],
-     "url": "https://www.twse.com.tw/rwd/zh/fund/T86?date=20261116&selectType=ALLBUT0999&response=json"
-    }
-   ]
-  },
-  {
-   "date": "2026-11-17",
-   "market": "上市",
-   "kind": "inst",
-   "status": "nodata",
-   "tried": [
-    {
-     "url": "https://www.twse.com.tw/rwd/zh/fund/T86?date=20261117&selectType=ALLBUT0999&response=json",
-     "nodata": true,
-     "stat": "很抱歉，沒有符合條件的資料!"
-    },
-    {
-     "url": "https://www.twse.com.tw/fund/T86?response=json&date=20261117&selectType=ALLBUT0999",
-     "nodata": true,
-     "stat": "很抱歉，沒有符合條件的資料!"
+     "url": "https://www.twse.com.tw/rwd/zh/fund/T86?date=20261117&selectType=ALLBUT0999&response=json"
     }
    ]
   },
@@ -138,21 +120,104 @@
    "date": "2026-11-17",
    "market": "上櫃",
    "kind": "inst",
-   "status": "nodata",
+   "status": "ok",
    "tried": [
     {
-     "url": "https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade?type=Daily&sect=EW&date=2026%2F11%2F17&response=json",
-     "nodata": true,
-     "stat": "ok"
-    },
-    {
-     "url": "https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php?l=zh-tw&o=json&se=EW&t=D&d=115/11/17",
-     "nodata": true,
-     "stat": "ok"
-    },
-    {
-     "url": "https://www.tpex.org.tw/openapi/v1/tpex_3insti_daily_trading",
-     "skip": "開放資料日期 2026-11-16 不是 2026-11-17"
+     "fields": [
+      "代號",
+      "名稱",
+      "買進股數",
+      "賣出股數",
+      "買賣超股數",
+      "買進股數#2",
+      "賣出股數#2",
+      "買賣超股數#2",
+      "買進股數#3",
+      "賣出股數#3",
+      "買賣超股數#3",
+      "買進股數#4",
+      "賣出股數#4",
+      "買賣超股數#4",
+      "買進股數#5",
+      "賣出股數#5",
+      "買賣超股數#5",
+      "買進股數#6",
+      "賣出股數#6",
+      "買賣超股數#6",
+      "買進股數#7",
+      "賣出股數#7",
+      "買賣超股數#7",
+      "三大法人買賣超股數合計"
+     ],
+     "map": {
+      "foreign": [
+       "買賣超股數#3"
+      ],
+      "trust": [
+       "買賣超股數#4"
+      ],
+      "dealer": [
+       "買賣超股數#7"
+      ],
+      "_fx_parts": [
+       "買賣超股數",
+       "買賣超股數#2"
+      ],
+      "_dl_parts": [
+       "買賣超股數#5",
+       "買賣超股數#6"
+      ],
+      "total": [
+       "三大法人買賣超股數合計"
+      ]
+     },
+     "rows": 782,
+     "check": 1.0,
+     "excluded_n": 120,
+     "excluded_foreign_shares": 17942300.0,
+     "excluded_top": [
+      [
+       "00937B",
+       2495030.0
+      ],
+      [
+       "00933B",
+       1474000.0
+      ],
+      [
+       "00950B",
+       1404000.0
+      ],
+      [
+       "00955",
+       1362000.0
+      ],
+      [
+       "00772B",
+       1323000.0
+      ],
+      [
+       "00696B",
+       1049000.0
+      ],
+      [
+       "00931B",
+       1030000.0
+      ],
+      [
+       "00740B",
+       877000.0
+      ],
+      [
+       "00795B",
+       761000.0
+      ],
+      [
+       "00998A",
+       -733000.0
+      ]
+     ],
+     "url": "https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade?type=Daily&sect=EW&date=2026%2F11%2F17&response=json"
     }
    ]
   },
@@ -182,18 +247,18 @@
  "errors": [],
  "coverage": {
   "上市/inst": [
-   "2026-11-10",
    "2026-11-11",
    "2026-11-12",
    "2026-11-13",
-   "2026-11-16"
+   "2026-11-16",
+   "2026-11-17"
   ],
   "上櫃/inst": [
-   "2026-11-10",
    "2026-11-11",
    "2026-11-12",
    "2026-11-13",
-   "2026-11-16"
+   "2026-11-16",
+   "2026-11-17"
   ],
   "上市/margin": [
    "2026-11-10",
