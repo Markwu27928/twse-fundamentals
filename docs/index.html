@@ -476,7 +476,7 @@ async function loadMacro() {
     box.append(h("div", { class: "verdict" }, h("span", { class: "badge " + cls }, "判讀：" + vd.label), h("span", { class: "small" }, vd.detail)));
   }
   box.append(h("div", { class: "small", style: "margin-top:4px" },
-    "外資買賣超為上市市場；匯率為每日參考匯率。這是資金流向參考指標，不是外資實際匯出入金額。"));
+    `外資買賣超為上市市場；匯率：${fx ? (fx.source_label || "每日參考匯率") + `（${fx.date.slice(5).replace("-", "/")}）` : "暫缺"}。這是資金流向參考指標，不是外資實際匯出入金額。`));
   box.hidden = false;
 }
 

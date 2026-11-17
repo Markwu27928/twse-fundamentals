@@ -52,7 +52,40 @@ def test_parse():
 
 
 def hist(fx, fr):
-    return {"fx": fx, "foreign": fr}
+    return {"fx_cbc": fx, "fx_ref": {}, "foreign": fr}
+
+
+CBC_HTML = """<html><body><h2>新臺幣/美元 銀行間收盤匯率</h2>
+<table><tr><th>日期</th><th>NTD/USD</th></tr>
+<tr><td>2026/11/17</td><td>31.420</td></tr>
+<tr><td>2026/11/16</td><td>31.312</td></tr>
+<tr><td>2026/11/13</td><td>31.010</td></tr>
+<tr><td>2026/11/12</td><td>30.985</td></tr>
+<tr><td>2026/11/11</td><td>31.002</td></tr>
+<tr><td>2026/11/10</td><td>31.050</td></tr>
+</table><p>更新日期：2026/11/17 共 3409 筆 2026/11/17 16:05</p></body></html>"""
+
+
+def test_cbc():
+    r = macro.parse_cbc(CBC_HTML)
+    check("央行收盤匯率：解析日期與匯率", r.get("2026-11-17") == 31.42 and r.get("2026-11-10") == 31.05 and len(r) == 6, str(r))
+    check("央行收盤匯率：不把『16:05』等時間或筆數誤當匯率", all(20 <= v <= 45 for v in r.values()))
+    try:
+        macro.parse_cbc("<html>系統維護中</html>")
+        ok = False
+    except RuntimeError:
+        ok = True
+    check("央行頁面格式改變時報錯", ok)
+    today = datetime.date(2026, 11, 17)
+    h = {"fx_cbc": r, "fx_ref": {"2026-11-17": 31.40, "2026-11-16": 31.30}, "foreign": {"2026-11-17": -100.0}}
+    s = macro.summarize(h, CFG, today)
+    check("有央行資料時用央行收盤價並標示來源", s["fx"]["source"] == "cbc" and s["fx"]["rate"] == 31.42 and "央行" in s["fx"]["source_label"])
+    check("央行單日變動：31.420 對 31.312", s["fx"]["change_1d_pct"] == round((31.42 / 31.312 - 1) * 100, 2))
+    old = {k: v for k, v in r.items() if k <= "2026-11-10"} | {"2026-11-03": 31.2, "2026-11-04": 31.1, "2026-11-05": 31.0, "2026-11-06": 31.0}
+    s2 = macro.summarize({"fx_cbc": old, "fx_ref": {"2026-11-17": 31.40, "2026-11-10": 31.0}, "foreign": {"2026-11-17": 1.0}}, CFG, today)
+    check("央行資料超過 5 天沒更新：改用參考價並標示非官方", s2["fx"]["source"] == "ref" and "非官方" in s2["fx"]["source_label"] and s2["fx"]["rate"] == 31.40)
+    check("參考價的變動只和參考價比較，不混用央行數字", s2["fx"]["change_1d_pct"] == round((31.40 / 31.0 - 1) * 100, 2))
+
 
 
 def test_verdict():
@@ -91,6 +124,7 @@ def test_missing_days():
 
 if __name__ == "__main__":
     test_parse()
+    test_cbc()
     test_verdict()
     test_missing_days()
     failed = [n for n, ok in results if not ok]

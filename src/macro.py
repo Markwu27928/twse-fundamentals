@@ -30,6 +30,9 @@ TZ = ZoneInfo("Asia/Taipei")
 UA = {"User-Agent": "Mozilla/5.0 (fundamentals-bot)", "Accept": "application/json"}
 
 BFI82U = "https://www.twse.com.tw/rwd/zh/fund/BFI82U?type=day&dayDate={d}&response=json"
+# 官方：中央銀行公布的新臺幣/美元銀行間收盤匯率（台北外匯經紀公司資料），每個營業日 16:00–17:00 公布一次
+CBC_URL = "https://www.cbc.gov.tw/tw/lp-645-1-6-40.html"
+CBC_MAX_STALE_DAYS = 5  # 央行最新資料超過這麼多天沒更新，視為抓取異常，改用備援
 FX_URLS = [
     "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@{d}/v1/currencies/usd.json",
     "https://{d}.currency-api.pages.dev/v1/currencies/usd.json",
@@ -93,6 +96,34 @@ def parse_fx(j):
     raise RuntimeError("回應中沒有 usd.twd")
 
 
+def parse_cbc(html):
+    """央行銀行間收盤匯率頁 -> {'YYYY-MM-DD': 匯率}。格式不符時丟出例外。"""
+    text = re.sub(r"<[^>]+>", " ", html)
+    pairs = re.findall(r"(\d{4})/(\d{2})/(\d{2})\s+(\d{2}\.\d{2,4})(?!\d)", text)
+    out = {}
+    for y, m, d, v in pairs:
+        rate = float(v)
+        if 20 <= rate <= 45:
+            out[f"{y}-{m}-{d}"] = rate
+    if len(out) < 5:
+        raise RuntimeError(f"央行頁面只解析到 {len(out)} 筆匯率，頁面格式可能已改變")
+    return out
+
+
+def fetch_cbc():
+    last = None
+    for i in range(3):
+        try:
+            r = requests.get(CBC_URL, headers={"User-Agent": UA["User-Agent"]}, timeout=60)
+            r.raise_for_status()
+            r.encoding = r.apparent_encoding or "utf-8"
+            return parse_cbc(r.text)
+        except Exception as e:  # noqa: BLE001
+            last = e
+            time.sleep(3 * (i + 1))
+    raise RuntimeError(f"央行匯率頁抓取失敗：{last}")
+
+
 def fetch_fx(date="latest"):
     errs = []
     for u in FX_URLS:
@@ -129,7 +160,16 @@ def summarize(hist, cfg, today):
     days = cfg["days"]
     out = {"fx": None, "foreign": None, "verdict": None}
 
-    fx = hist.get("fx", {})
+    # 優先用央行收盤匯率；央行資料太舊（抓取異常）時才用國際參考價。兩者不混合計算。
+    src = "cbc"
+    fx = hist.get("fx_cbc", {})
+    ref = hist.get("fx_ref", {})
+    if fx and today is not None:
+        stale = (today - datetime.date.fromisoformat(max(fx))).days
+        if stale > CBC_MAX_STALE_DAYS and ref and max(ref) > max(fx):
+            fx, src = ref, "ref"
+    elif not fx:
+        fx, src = ref, "ref"
     if fx:
         ds = sorted(fx)
         last = ds[-1]
@@ -141,6 +181,8 @@ def summarize(hist, cfg, today):
             "change_1d_pct": round((fx[last] / fx[prev] - 1) * 100, 2) if prev else None,
             "change_win_pct": round((fx[last] / fx[base_d] - 1) * 100, 2) if base_d else None,
             "win_from": base_d,
+            "source": src,
+            "source_label": "央行公布銀行間收盤匯率" if src == "cbc" else "國際參考匯率（非官方收盤，央行資料暫缺）",
         }
 
     fr = hist.get("foreign", {})
@@ -187,7 +229,11 @@ def trading_days_missing(hist, today, lookback=14):
 def main():
     cfg = json.loads((ROOT / "config" / "macro.json").read_text(encoding="utf-8"))
     hist = json.loads(HIST.read_text(encoding="utf-8")) if HIST.exists() else {}
-    hist.setdefault("fx", {}), hist.setdefault("foreign", {}), hist.setdefault("closed", [])
+    hist.setdefault("foreign", {}), hist.setdefault("closed", [])
+    # 舊版的 fx（國際參考價）改存為 fx_ref，不與官方收盤價混用
+    if "fx" in hist:
+        hist.setdefault("fx_ref", {}).update(hist.pop("fx"))
+    hist.setdefault("fx_cbc", {}), hist.setdefault("fx_ref", {})
     today = datetime.datetime.now(TZ).date()
     errors = []
 
@@ -206,25 +252,22 @@ def main():
             print(f"[警告] 外資 {d}：{e}", file=sys.stderr)
         time.sleep(3)
 
-    # 匯率：最新值 + 回補近 10 天歷史
+    # 匯率：央行銀行間收盤匯率（官方，含近 40 個營業日）；失敗時抓國際參考價備援
     try:
-        d, rate, src = fetch_fx("latest")
-        hist["fx"][d] = rate
-        print(f"[匯率] {d} USD/TWD {rate}（{src}）")
+        cbc = fetch_cbc()
+        hist["fx_cbc"].update(cbc)
+        last = max(cbc)
+        print(f"[匯率] 央行收盤 {last} USD/TWD {cbc[last]}（本次取得 {len(cbc)} 個營業日）")
     except Exception as e:  # noqa: BLE001
-        errors.append(f"匯率最新值：{e}")
-        print(f"[警告] 匯率最新值：{e}", file=sys.stderr)
-    for i in range(1, 11):
-        d = (today - datetime.timedelta(days=i)).isoformat()
-        if d in hist["fx"]:
-            continue
+        errors.append(f"央行匯率：{e}")
+        print(f"[警告] 央行匯率：{e}，改用國際參考價", file=sys.stderr)
         try:
-            dd, rate, _ = fetch_fx(d)
-            hist["fx"][dd] = rate
-        except Exception as e:  # noqa: BLE001
-            errors.append(f"匯率 {d}：{e}")
-            break  # 歷史版本取不到就不再逐日重試
-    for k in ("fx", "foreign"):
+            d, rate, src = fetch_fx("latest")
+            hist["fx_ref"][d] = rate
+            print(f"[匯率] 參考價 {d} USD/TWD {rate}（{src}）")
+        except Exception as e2:  # noqa: BLE001
+            errors.append(f"匯率參考價：{e2}")
+    for k in ("fx_cbc", "fx_ref", "foreign"):
         for old in sorted(hist[k])[:-60]:
             del hist[k][old]
     hist["closed"] = sorted(set(hist["closed"]))[-60:]
