@@ -12,7 +12,7 @@
       "key": "gross_margin",
       "label": "毛利率",
       "unit": "%",
-      "weight": 0.1,
+      "weight": 0.07,
       "bad": 10,
       "good": 40
     },
@@ -20,7 +20,7 @@
       "key": "op_margin",
       "label": "營業利益率",
       "unit": "%",
-      "weight": 0.12,
+      "weight": 0.09,
       "bad": 0,
       "good": 15
     },
@@ -28,15 +28,23 @@
       "key": "roe",
       "label": "ROE(年化)",
       "unit": "%",
-      "weight": 0.13,
+      "weight": 0.14,
       "bad": 3,
       "good": 18
+    },
+    {
+      "key": "gp_assets",
+      "label": "毛利占資產",
+      "unit": "%",
+      "bad": 5,
+      "good": 40,
+      "weight": 0.1
     },
     {
       "key": "rev_yoy",
       "label": "累計營收年增",
       "unit": "%",
-      "weight": 0.08,
+      "weight": 0.06,
       "bad": -10,
       "good": 20
     },
@@ -52,7 +60,7 @@
       "key": "rev_mom",
       "label": "單月營收月增",
       "unit": "%",
-      "weight": 0.05,
+      "weight": 0.03,
       "bad": -15,
       "good": 15
     },
@@ -60,7 +68,7 @@
       "key": "debt_ratio",
       "label": "負債比",
       "unit": "%",
-      "weight": 0.1,
+      "weight": 0.07,
       "bad": 75,
       "good": 40
     },
@@ -68,7 +76,7 @@
       "key": "current_ratio",
       "label": "流動比",
       "unit": "%",
-      "weight": 0.1,
+      "weight": 0.05,
       "bad": 100,
       "good": 200
     },
@@ -76,7 +84,7 @@
       "key": "pe",
       "label": "本益比",
       "unit": "倍",
-      "weight": 0.12,
+      "weight": 0.11,
       "bad": 35,
       "good": 12
     },
@@ -89,10 +97,18 @@
       "good": 1.2
     },
     {
+      "key": "rev_to_price",
+      "label": "營收市價比",
+      "unit": "倍",
+      "bad": 0.1,
+      "good": 1.5,
+      "weight": 0.09
+    },
+    {
       "key": "dy",
       "label": "殖利率",
       "unit": "%",
-      "weight": 0.05,
+      "weight": 0.04,
       "bad": 0,
       "good": 5
     }
@@ -162,5 +178,14 @@
     "conc_pct": 0.5,
     "margin_up_pct": 5,
     "list_size": 30
+  },
+  "_研究依據": "權重依台股實證調整（2026-11）：營收動能、營收創新高、營收市價比在台股有 1–12 個月顯著正報酬（顧廣平等）；獲利能力因子（RMW）在台股五因子模型中解釋力顯著；外資買超具正報酬、投信買超為短期效果，賣超無預測力；價格動能在台股證據不一致，未納入。權重未經回測驗證，請以「績效追蹤」的實際結果為準再調整。",
+  "bonuses": {
+    "_說明": "加分項（總分上限 100）。rev_high12：最新月營收創近 12 個月新高；inst_buy：外資＋投信近 5 日買超占發行股數達 min_pct% 以上（只加分不扣分）。",
+    "rev_high12": 4,
+    "inst_buy": {
+      "min_pct": 0.3,
+      "points": 3
+    }
   }
 }

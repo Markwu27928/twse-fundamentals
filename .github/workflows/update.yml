@@ -55,7 +55,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/diagnostics.json data/macro_history.json docs/macro.json data/flow_diag.json data/flow_history.json data/flows.json 2>/dev/null || true
           if [ "${{ steps.fetch.outcome }}" = "success" ]; then
-            git add data/companies.json data/turnover_history.json data/revenue_history.json docs/data.json
+            git add data/companies.json data/turnover_history.json data/revenue_history.json data/tracking.json docs/data.json
           fi
           if git diff --cached --quiet; then
             echo "資料沒有變動"

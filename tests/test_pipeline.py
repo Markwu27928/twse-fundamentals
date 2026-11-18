@@ -175,6 +175,26 @@ def test_archetypes():
     check("單月營收月增、年增納入評分指標", "rev_mom" in m2 and "rev_yoy_m" in m2)
     _, _, s9, *_ = score.score_company(dict(c, rev_streak=3, rev_yoy_m=40.0, rev_mom=20.0), CFG)
     check("加分後分數上限 100", s9 <= 100.0, f"({s9})")
+    # 研究依據的新指標
+    base = dict(mid, mcap=100.0, rev_sum12=5_000_000.0, total_assets=1e8, season=3)
+    m3 = score.derive(base)
+    check("營收市價比＝近 12 月營收 ÷ 市值", abs(m3["rev_to_price"] - 5_000_000 * 1000 / 1e10) < 1e-9, str(m3.get("rev_to_price")))
+    check("毛利占資產＝累計毛利年化 ÷ 總資產", abs(m3["gp_assets"] - 2.0e7 * 4 / 3 / 1e8 * 100) < 1e-9, str(m3.get("gp_assets")))
+    m4 = score.derive(dict(base, rev_sum12=None))
+    check("沒有 12 個月月營收時，用財報累計營收年化", abs(m4["rev_to_price"] - 1e8 * 4 / 3 * 1000 / 1e10) < 1e-9)
+    m5 = score.derive(dict(base, industry="17", fs_format="basi"))
+    check("金融業不評營收市價比、毛利占資產", "rev_to_price" not in m5 and "gp_assets" not in m5)
+    _, _, b0, *_ = score.score_company(dict(base, growth={"high12": False}), CFG)
+    _, _, b1, _, _, _, up1, _ = score.score_company(dict(base, growth={"high12": True}), CFG)
+    check("營收創 12 個月新高加分並列入優勢", round(b1 - b0, 6) == CFG["bonuses"]["rev_high12"] and any("新高" in t for t in up1))
+    sh = 100_000_000  # 發行 1 億股
+    buy_flow = {"n5": 5, "foreign5": 300, "trust5": 50}      # 35 萬股＝0.35%
+    sell_flow = {"n5": 5, "foreign5": -3000, "trust5": -500}
+    _, _, f0, *_ = score.score_company(dict(base, shares=sh), CFG, None)
+    _, _, f1, *_ = score.score_company(dict(base, shares=sh), CFG, buy_flow)
+    _, _, f2, *_ = score.score_company(dict(base, shares=sh), CFG, sell_flow)
+    check("外資＋投信買超達門檻加分", round(f1 - f0, 6) == CFG["bonuses"]["inst_buy"]["points"])
+    check("法人賣超不扣分（研究：賣超沒有預測力）", f2 == f0)
     _, _, sf, lf, _, ff, _, _ = score.score_company(dict(fixtures.archetypes()[2][0], rev_streak=2), CFG)
     check("營收連兩月成長但本期虧損：仍不給買進", lf != "買進", f"({lf}, {ff})")
     fin = dict(c, industry="17", fs_format="basi", revenue=None, gross_profit=None, op_income=None,

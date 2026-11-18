@@ -98,6 +98,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
     <button id="v-theme" aria-pressed="false">主題族群</button>
     <button id="v-hot" aria-pressed="false">熱門產品</button>
     <button id="v-flow" aria-pressed="false">資金流向</button>
+    <button id="v-track" aria-pressed="false">績效追蹤</button>
   </div>
 
   <div id="ctl-all" class="controls">
@@ -129,7 +130,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
   <div class="count" id="count"></div>
   <div id="list"></div>
   <div class="foot">
-    評分為依設定檔規則計算的財報體質分數，並非預測股價漲跌，也不構成投資建議。<br>
+    評分為依設定檔規則計算的財報體質分數，並非預測股價漲跌，也不構成投資建議。權重參考台股實證研究（營收動能、營收市價比、獲利能力、法人買超），尚未經回測驗證，請看「績效追蹤」的實際結果。<br>
     標籤顏色採台股習慣：買進為紅、賣出為綠。<br>
     「匯立分點」：讀取同網站的匯立分點日報資料（永豐金-匯立 9A81），每天只收錄買超、賣超各前 50 名。<br>
     「資金流向」：三大法人買賣超與融資融券來自證交所、櫃買中心每日資料；金額以最新收盤價估算。「籌碼集中」為近 5 日法人買超占發行股數 ≥ 0.5%；「法人買、融資減」代表籌碼由散戶流向法人。<br>
@@ -384,6 +385,29 @@ function renderFlow() {
 }
 function netYi(v) { return h("span", { class: v > 0 ? "up" : v < 0 ? "down" : "" }, `${v > 0 ? "+" : ""}${v.toFixed(1)}`); }
 
+function renderTrack() {
+  const T = D.tracking;
+  const list = $("list"); list.replaceChildren();
+  if (!T || !T.cohorts || !T.cohorts.length) { $("count").textContent = "績效追蹤尚未開始"; return; }
+  $("count").textContent = "每月 11 日建立一期模擬持股，追蹤之後的實際報酬，驗證評分是否有效";
+  const ORDER = ["買進", "評分前20%", "成長潛力", "觀望", "評分後20%", "賣出", "全市場"];
+  for (const c of T.cohorts) {
+    const changed = c.rules !== T.current_rules;
+    list.append(h("div", { class: "ind" }, `${c.id} 期（${c.formed.slice(5).replace("-", "/")} 建立，經過 ${c.days} 天）`),
+      h("div", { class: "ind-sub" }, (changed ? "此期使用較早版本的評分規則；" : "") + (c.days < 30 ? "未滿一個月，報酬主要反映短期波動，參考價值低" : "")));
+    list.append(h("table", { class: "grp" },
+      h("tr", {}, h("th", {}, "組別"), h("th", {}, "檔數"), h("th", {}, "報酬"), h("th", {}, "超額"), h("th", {}, "勝率")),
+      ORDER.filter((g) => c.groups[g]).map((g) => {
+        const v = c.groups[g];
+        return h("tr", {}, h("td", {}, g === "全市場" ? "全市場（基準）" : g), h("td", {}, String(v.n)),
+          h("td", {}, pctSpan(v.ret, 2)), h("td", {}, g === "全市場" ? "—" : pctSpan(v.excess, 2)),
+          h("td", {}, g === "全市場" ? "—" : `${v.win}%`));
+      })));
+    if (c.excluded_n) list.append(h("div", { class: "meta", style: "margin-top:4px" }, `${c.excluded_n} 檔因股價異常跳動（可能是減資或分割）未計入`));
+  }
+  list.append(h("div", { class: "foot" }, T.note + " 勝率：該組中報酬高於全市場平均的股票比例。要累積多期、經過多個月，才能判斷評分是否穩定有效；單一期別的好壞可能只是運氣。"));
+}
+
 function render() {
   $("ctl-all").hidden = st.view !== "all";
   $("ctl-top").hidden = st.view === "all";
@@ -391,6 +415,8 @@ function render() {
   $("ctl-flow").hidden = st.view !== "flow";
   if (st.view === "flow") $("ctl-top").hidden = true;
   $("v-flow").setAttribute("aria-pressed", st.view === "flow");
+  $("v-track").setAttribute("aria-pressed", st.view === "track");
+  if (st.view === "track") $("ctl-top").hidden = true;
   $("v-theme").setAttribute("aria-pressed", st.view === "theme");
   $("v-hot").setAttribute("aria-pressed", st.view === "hot");
   $("v-all").setAttribute("aria-pressed", st.view === "all");
@@ -404,6 +430,7 @@ function render() {
   else if (st.view === "top") renderTop();
   else if (st.view === "theme") renderTheme();
   else if (st.view === "hot") renderHot();
+  else if (st.view === "track") renderTrack();
   else renderFlow();
 }
 
@@ -507,6 +534,7 @@ async function init() {
   $("v-theme").onclick = () => { st.view = "theme"; render(); };
   $("v-hot").onclick = () => { st.view = "hot"; render(); };
   $("v-flow").onclick = () => { st.view = "flow"; render(); };
+  $("v-track").onclick = () => { st.view = "track"; render(); };
   if (D.flows) {
     $("flow-pick").append(...FLOW_GROUPS.map((n) => h("option", { value: n }, n)),
       ...HL_LISTS.map((n) => h("option", { value: n }, n)),

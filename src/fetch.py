@@ -348,6 +348,12 @@ def apply_revenue_history(companies, hist):
         c["rev_prev_yoy"] = pv.get("yoy")
         c["rev_streak"] = monthly.streak(h, ym) if ym else 0
         c["growth"] = monthly.growth_profile(h, ym) if ym else None
+        # 近 12 個月營收合計（千元），用於營收市價比；12 個月不全時為 None
+        if ym:
+            r12 = [h.get(m, {}).get("rev") for m in monthly.months_back(ym, 12)]
+            c["rev_sum12"] = sum(r12) if all(r is not None for r in r12) else None
+        else:
+            c["rev_sum12"] = None
 
 
 def update_revenue_history(companies):

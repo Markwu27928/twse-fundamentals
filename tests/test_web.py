@@ -75,6 +75,17 @@ def main():
     sample["flows"] = sc.build_flow_views(sample["companies"], cfg, sample.get("themes", {}), sample.get("products", []), sample["industries"])
     global n_flow_lists
     n_flow_lists = len(sample["flows"]["lists"])
+    # 績效追蹤模擬資料：兩期，第二期為舊版規則
+    import tracking as tk
+    import datetime as dt
+    tst = {}
+    tk.maybe_form(tst, sample["companies"], dt.date(2026, 10, 15), {"metrics": [], "buy_above": 70})
+    tk.maybe_form(tst, sample["companies"], dt.date(2026, 11, 18), cfg)
+    later = json.loads(json.dumps(sample["companies"]))
+    for i, x in enumerate(later):
+        if x.get("price"):
+            x["price"] = round(x["price"] * (1.12 if x["label"] == "買進" else 0.97 if x["label"] == "賣出" else 1.01), 2)
+    _, sample["tracking"] = tk.update(tst, later, dt.date(2026, 12, 5), cfg)
     (tmp / "data.json").write_text(json.dumps(sample, ensure_ascii=False), encoding="utf-8")
     global data_has_themes, n_themes
     n_themes = len(sample.get("themes") or {})
@@ -274,6 +285,15 @@ def main():
         check("匯立買＋法人買清單可顯示", page.locator("#count").inner_text().startswith("匯立買＋法人買"))
         page.click("#v-all")
         check("其他分頁也顯示匯立標記", page.locator("details.co .hl").count() >= 0)
+
+        # 績效追蹤
+        page.click("#v-track")
+        check("績效追蹤分頁：隱藏其他控制、顯示兩期", page.locator("#ctl-flow").is_hidden() and page.locator("#ctl-all").is_hidden() and page.locator(".ind").count() == 2)
+        tb = page.locator("table.grp").first.inner_text()
+        check("績效表：買進組 +12.00%、全市場為基準", "+12.00%" in tb.replace("▲", "+") or "12.00%" in tb and "全市場（基準）" in tb, tb.replace("\n", " | ")[:160])
+        subs = page.locator(".ind-sub").all_inner_texts()
+        check("舊版規則的期別有標示", any("較早版本" in x for x in subs) and not ("較早版本" in subs[0]), str(subs))
+        page.screenshot(path=str(shots / "shot_track.png"))
 
         # 切回全市場，狀態保留
         page.click("#v-all")

@@ -5,9 +5,13 @@
 缺資料的指標會略過並重新配分，coverage 表示可用權重占比。
 標籤：score >= buy_above 且無風險旗標 → 買進；score <= sell_below → 賣出；其餘 → 觀望。
 """
+import datetime
 import json
 import pathlib
 import sys
+from zoneinfo import ZoneInfo
+
+import tracking
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 LOSS_PE = 999.0  # 虧損公司本益比以極大值代表，評分時為最差
@@ -58,6 +62,17 @@ def derive(c):
         m["pe"] = LOSS_PE
     if c.get("pb") is not None and c["pb"] > 0:
         m["pb"] = c["pb"]
+    # 營收市價比（研究：未預期營收與營收市價比策略有顯著超額報酬）：近 12 月營收 ÷ 市值
+    mcap = c.get("mcap")  # 億元
+    if mcap and mcap > 0 and not fin:
+        r12 = c.get("rev_sum12")  # 千元
+        if r12 is None and rev and s in (1, 2, 3, 4):
+            r12 = rev * (4 / s)  # 沒有 12 個月月營收時，用財報累計營收年化
+        if r12 is not None and r12 > 0:
+            m["rev_to_price"] = r12 * 1000 / (mcap * 1e8)
+    # 毛利占總資產（獲利能力因子，Novy-Marx 毛利能力）：累計毛利年化 ÷ 總資產
+    if not fin and c.get("gross_profit") is not None and ta and ta > 0 and s in (1, 2, 3, 4):
+        m["gp_assets"] = c["gross_profit"] * (4 / s) / ta * 100
     if c.get("dy") is not None:
         m["dy"] = c["dy"]
     return m
@@ -69,14 +84,14 @@ def fmt_metric(key, v, mc):
     return f"{mc['label']}：{v:.1f}{mc['unit']}"
 
 
-NOT_FOR_FIN = {"gross_margin", "op_margin", "debt_ratio", "current_ratio"}
+NOT_FOR_FIN = {"gross_margin", "op_margin", "debt_ratio", "current_ratio", "rev_to_price", "gp_assets"}
 
 
 def has_statement(c):
     return c.get("net_income") is not None or c.get("equity") is not None
 
 
-def score_company(c, cfg):
+def score_company(c, cfg, flow=None):
     metrics = derive(c)
     fin = is_financial(c)
     # 涵蓋度只計算「適用」的指標：金融業不適用毛利率、營益率、負債比、流動比
@@ -111,8 +126,23 @@ def score_company(c, cfg):
     rs = cfg.get("revenue_streak", {})
     streak_n = c.get("rev_streak") or 0
     hot = streak_n >= rs.get("min_months", 2)
+    bonus_notes = []
     if hot:
-        score = min(100.0, score + rs.get("bonus", 0))
+        score += rs.get("bonus", 0)
+        bonus_notes.append(f"月營收連 {streak_n} 個月月增、年增皆成長（加 {rs.get('bonus', 0)} 分）")
+    bz = cfg.get("bonuses", {})
+    # 營收創近 12 個月新高（研究：營收創新高動能有 1–12 個月顯著正報酬）
+    if (c.get("growth") or {}).get("high12") and bz.get("rev_high12"):
+        score += bz["rev_high12"]
+        bonus_notes.append(f"最新月營收創近 12 個月新高（加 {bz['rev_high12']} 分）")
+    # 外資＋投信 5 日買超占股本（研究：外資買超有正報酬、投信買超短期有效；賣超沒有預測力，所以只加分不扣分）
+    ib = bz.get("inst_buy") or {}
+    if flow and flow.get("n5") and c.get("shares") and ib.get("points"):
+        ft = ((flow.get("foreign5") or 0) + (flow.get("trust5") or 0)) * 1000 / c["shares"] * 100
+        if ft >= ib.get("min_pct", 0.3):
+            score += ib["points"]
+            bonus_notes.append(f"外資＋投信近 5 日買超占股本 {ft:.2f}%（加 {ib['points']} 分）")
+    score = min(100.0, score)
     if score <= cfg["sell_below"]:
         label = "賣出"
     elif score >= cfg["buy_above"] and not flags and coverage >= cfg.get("buy_min_coverage", 0):
@@ -122,9 +152,7 @@ def score_company(c, cfg):
 
     by_key = {mc["key"]: mc for mc in cfg["metrics"]}
     ranked = sorted(subs.items(), key=lambda kv: kv[1], reverse=True)
-    strengths = [fmt_metric(k, metrics[k], by_key[k]) for k, s in ranked if s >= 70][:2]
-    if hot:
-        strengths.insert(0, f"月營收連 {streak_n} 個月月增、年增皆成長（加 {rs.get('bonus', 0)} 分）")
+    strengths = bonus_notes + [fmt_metric(k, metrics[k], by_key[k]) for k, s in ranked if s >= 70][:2]
     weaknesses = [fmt_metric(k, metrics[k], by_key[k]) for k, s in reversed(ranked) if s <= 30][:2]
     return metrics, subs, score, label, coverage, flags, strengths, weaknesses
 
@@ -323,7 +351,7 @@ def build_flow_views(out, cfg, theme_groups, hot, industries):
 def build(raw_companies, cfg, generated_at, themes=None, products=None, heat=None, flows=None):
     out = []
     for c in raw_companies:
-        metrics, subs, score, label, cov, flags, up, dn = score_company(c, cfg)
+        metrics, subs, score, label, cov, flags, up, dn = score_company(c, cfg, (flows or {}).get(c["code"]))
         period = f"{c['year']}Q{c['season']}" if c.get("year") and c.get("season") else None
         out.append({
             "code": c["code"],
@@ -412,6 +440,15 @@ def main(src=None, dst=None):
     result = build(payload["companies"], cfg, payload["generated_at"], themes, products, heat, flows)
     if result.get("flows") is not None:
         result["flows"]["coverage"] = flow_meta
+    # 績效追蹤（模擬持股）
+    tpath = src.parent / "tracking.json"
+    tstate = json.loads(tpath.read_text(encoding="utf-8")) if tpath.exists() else {}
+    today = datetime.datetime.now(ZoneInfo("Asia/Taipei")).date()
+    formed, tsum = tracking.update(tstate, result["companies"], today, cfg)
+    tpath.write_text(json.dumps(tstate, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    result["tracking"] = tsum
+    if formed:
+        print(f"[績效追蹤] 建立新期別 {today:%Y-%m}")
     for t in result["products"]:
         if t["missing"]:
             print(f"[提醒] 題材「{t['name']}」找不到代號：{', '.join(t['missing'])}")
