@@ -16,11 +16,11 @@ import json
 FORM_DAY = 11          # 每月 11 日以後的第一次執行建立新期別
 MAX_ABS_RET = 3.0      # 單檔報酬 > +300% 或 < -75% 視為資料異常（減資、分割等）
 MIN_RET = -0.75
-GROUPS = ["買進", "觀望", "賣出", "評分前20%", "評分後20%", "成長潛力", "全市場"]
+GROUPS = ["買進", "觀望", "賣出", "評分前20%", "評分後20%", "成長潛力", "RSI超賣", "跌破布林下軌", "MACD黃金交叉", "全市場"]
 
 
 def rules_version(cfg):
-    keep = {k: cfg.get(k) for k in ("metrics", "buy_above", "sell_below", "bonuses", "revenue_streak", "growth_potential")}
+    keep = {k: cfg.get(k) for k in ("metrics", "buy_above", "sell_below", "bonuses", "revenue_streak", "growth_potential", "technical")}
     return hashlib.sha1(json.dumps(keep, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:8]
 
 
@@ -36,6 +36,10 @@ def groups_of(out):
         "評分前20%": [x["code"] for x in scored[:n]],
         "評分後20%": [x["code"] for x in scored[-n:]] if n else [],
         "成長潛力": [x["code"] for x in xs if x.get("potential")],
+        # 技術訊號單獨分組，驗證技術指標在台股是否有效（只看有財報評分的股票）
+        "RSI超賣": [x["code"] for x in scored if "RSI超賣" in (x.get("tech_signals") or [])],
+        "跌破布林下軌": [x["code"] for x in scored if "跌破布林下軌" in (x.get("tech_signals") or [])],
+        "MACD黃金交叉": [x["code"] for x in scored if "MACD黃金交叉" in (x.get("tech_signals") or [])],
         "全市場": [x["code"] for x in scored],
     }
     return g

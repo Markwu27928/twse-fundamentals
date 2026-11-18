@@ -75,6 +75,13 @@ def main():
     sample["flows"] = sc.build_flow_views(sample["companies"], cfg, sample.get("themes", {}), sample.get("products", []), sample["industries"])
     global n_flow_lists
     n_flow_lists = len(sample["flows"]["lists"])
+    # 技術面模擬資料
+    for i, c in enumerate(sample["companies"]):
+        r = 15 + (i * 7) % 80
+        c["tech"] = {"days": 80, "close": c.get("price") or 50, "gap": i % 50 == 0, "rsi": float(r),
+                     "bb": {"mid": 100.0, "upper": 110.0, "lower": 90.0, "pct_b": -0.1 if r < 25 else 0.5, "width": 20.0},
+                     "macd": {"macd": 1.2, "signal": 0.8, "hist": 0.4, "cross": "golden" if i % 9 == 0 else None, "cross_ago": 0 if i % 9 == 0 else None}}
+        c["tech_signals"] = sc.tech_adjust(c["tech"], cfg)[2]
     # 績效追蹤模擬資料：兩期，第二期為舊版規則
     import tracking as tk
     import datetime as dt
@@ -265,6 +272,16 @@ def main():
         fb = page.locator("details.co").first.inner_text()
         check("卡片明細：法人買賣超表與融資融券", "法人買賣超（張" in fb and "外資" in fb and "投信" in fb and "融資餘額" in fb and "券資比" in fb)
         page.screenshot(path=str(shots / "shot_flow_list.png"))
+
+        # 技術面
+        page.click("#v-all")
+        page.select_option("#sort", "rsi")
+        page.locator("details.co summary").first.click()
+        tb = page.locator("details.co").first.inner_text()
+        check("依 RSI 排序：第一檔 RSI 最低並顯示技術面三項指標", "RSI(14)" in tb and "15.0（超賣）" in tb and "布林通道(20,2)" in tb and "MACD(12,26,9)" in tb, tb[tb.find("技術面"):][:120].replace("\n", " "))
+        page.locator("details.co summary").first.click()
+        page.select_option("#sort", "score")
+        page.click("#v-flow")
 
         # 匯立分點（讀取 ../huili/data.json）
         page.select_option("#flow-pick", "匯立分點買超（最新）")

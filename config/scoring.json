@@ -187,5 +187,18 @@
       "min_pct": 0.3,
       "points": 3
     }
+  },
+  "technical": {
+    "_說明": "技術面加減分（只在有財報評分時套用，合計限制在 ±max_abs）。依台股研究方向：跌破布林下軌、RSI 超賣為買進訊號；突破布林上軌不扣分（研究顯示突破後反而有動能）；MACD 黃金／死亡交叉看最近 cross_days 天。近 30 天有除權息、減資等價格跳空的股票不套用。",
+    "max_abs": 5,
+    "rsi_oversold": 30,
+    "rsi_oversold_pts": 3,
+    "rsi_overheat": 80,
+    "rsi_overheat_pts": -2,
+    "bb_lower_pct_b": 0.0,
+    "bb_lower_pts": 3,
+    "macd_cross_days": 3,
+    "macd_golden_pts": 2,
+    "macd_dead_pts": -2
   }
 }

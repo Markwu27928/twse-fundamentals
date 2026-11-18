@@ -91,7 +91,40 @@ def has_statement(c):
     return c.get("net_income") is not None or c.get("equity") is not None
 
 
-def score_company(c, cfg, flow=None):
+def tech_adjust(t, cfg):
+    """技術面加減分：回傳 (分數調整, 說明清單, 訊號清單)。資料不足或價格跳空時不調整。"""
+    tc = cfg.get("technical") or {}
+    if not t or not tc:
+        return 0, [], []
+    sig, notes, pts = [], [], 0
+    if t.get("gap"):
+        return 0, ["近 30 天有除權息或減資等價格跳空，技術指標可能失真，不加減分"], ["價格跳空"]
+    r = t.get("rsi")
+    if r is not None and r <= tc.get("rsi_oversold", 30):
+        pts += tc.get("rsi_oversold_pts", 0); sig.append("RSI超賣")
+        notes.append(f"RSI {r:.1f} 低於 {tc.get('rsi_oversold', 30)}（超賣，{tc.get('rsi_oversold_pts', 0):+d} 分）")
+    elif r is not None and r >= tc.get("rsi_overheat", 80):
+        pts += tc.get("rsi_overheat_pts", 0); sig.append("RSI過熱")
+        notes.append(f"RSI {r:.1f} 高於 {tc.get('rsi_overheat', 80)}（過熱，{tc.get('rsi_overheat_pts', 0):+d} 分）")
+    bb = t.get("bb") or {}
+    if bb.get("pct_b") is not None and bb["pct_b"] <= tc.get("bb_lower_pct_b", 0):
+        pts += tc.get("bb_lower_pts", 0); sig.append("跌破布林下軌")
+        notes.append(f"收盤跌破布林下軌（%B {bb['pct_b']:.2f}，{tc.get('bb_lower_pts', 0):+d} 分）")
+    elif bb.get("pct_b") is not None and bb["pct_b"] >= 1:
+        sig.append("突破布林上軌")
+    m = t.get("macd") or {}
+    if m.get("cross") and m.get("cross_ago") is not None and m["cross_ago"] < tc.get("macd_cross_days", 3):
+        if m["cross"] == "golden":
+            pts += tc.get("macd_golden_pts", 0); sig.append("MACD黃金交叉")
+            notes.append(f"MACD 黃金交叉（{m['cross_ago']} 天前，{tc.get('macd_golden_pts', 0):+d} 分）")
+        else:
+            pts += tc.get("macd_dead_pts", 0); sig.append("MACD死亡交叉")
+            notes.append(f"MACD 死亡交叉（{m['cross_ago']} 天前，{tc.get('macd_dead_pts', 0):+d} 分）")
+    lim = tc.get("max_abs", 5)
+    return max(-lim, min(lim, pts)), notes, sig
+
+
+def score_company(c, cfg, flow=None, tech=None):
     metrics = derive(c)
     fin = is_financial(c)
     # 涵蓋度只計算「適用」的指標：金融業不適用毛利率、營益率、負債比、流動比
@@ -142,7 +175,8 @@ def score_company(c, cfg, flow=None):
         if ft >= ib.get("min_pct", 0.3):
             score += ib["points"]
             bonus_notes.append(f"外資＋投信近 5 日買超占股本 {ft:.2f}%（加 {ib['points']} 分）")
-    score = min(100.0, score)
+    tpts, tnotes, _ = tech_adjust(tech, cfg)
+    score = max(0.0, min(100.0, score + tpts))
     if score <= cfg["sell_below"]:
         label = "賣出"
     elif score >= cfg["buy_above"] and not flags and coverage >= cfg.get("buy_min_coverage", 0):
@@ -152,8 +186,8 @@ def score_company(c, cfg, flow=None):
 
     by_key = {mc["key"]: mc for mc in cfg["metrics"]}
     ranked = sorted(subs.items(), key=lambda kv: kv[1], reverse=True)
-    strengths = bonus_notes + [fmt_metric(k, metrics[k], by_key[k]) for k, s in ranked if s >= 70][:2]
-    weaknesses = [fmt_metric(k, metrics[k], by_key[k]) for k, s in reversed(ranked) if s <= 30][:2]
+    strengths = bonus_notes + [t for t in tnotes if "+" in t] + [fmt_metric(k, metrics[k], by_key[k]) for k, s in ranked if s >= 70][:2]
+    weaknesses = [t for t in tnotes if "+" not in t] + [fmt_metric(k, metrics[k], by_key[k]) for k, s in reversed(ranked) if s <= 30][:2]
     return metrics, subs, score, label, coverage, flags, strengths, weaknesses
 
 
@@ -348,10 +382,11 @@ def build_flow_views(out, cfg, theme_groups, hot, industries):
     return {"industries": ind_rows, "products": prod_rows, "lists": lists}
 
 
-def build(raw_companies, cfg, generated_at, themes=None, products=None, heat=None, flows=None):
+def build(raw_companies, cfg, generated_at, themes=None, products=None, heat=None, flows=None, tech=None):
     out = []
     for c in raw_companies:
-        metrics, subs, score, label, cov, flags, up, dn = score_company(c, cfg, (flows or {}).get(c["code"]))
+        tch = (tech or {}).get(c["code"])
+        metrics, subs, score, label, cov, flags, up, dn = score_company(c, cfg, (flows or {}).get(c["code"]), tch)
         period = f"{c['year']}Q{c['season']}" if c.get("year") and c.get("season") else None
         out.append({
             "code": c["code"],
@@ -377,6 +412,8 @@ def build(raw_companies, cfg, generated_at, themes=None, products=None, heat=Non
             **dict(zip(("potential", "potential_rank", "potential_notes"), growth_potential(c, cfg))),
             "growth": {k: (c.get("growth") or {}).get(k) for k in ("avg3_yoy", "prev3_yoy", "accel", "all3_pos", "high12", "months", "hist")},
             "flow": (flows or {}).get(c["code"]),
+            "tech": tch,
+            "tech_signals": tech_adjust(tch, cfg)[2],
             "flow_signals": flow_signals((flows or {}).get(c["code"]), cfg),
             "period": period,
             "metrics": {k: round(v, 2) for k, v in metrics.items()},
@@ -437,7 +474,9 @@ def main(src=None, dst=None):
     if fpath.exists():
         fj = json.loads(fpath.read_text(encoding="utf-8"))
         flows, flow_meta = fj.get("stocks"), fj.get("coverage")
-    result = build(payload["companies"], cfg, payload["generated_at"], themes, products, heat, flows)
+    tjpath = src.parent / "technical.json"
+    tech = json.loads(tjpath.read_text(encoding="utf-8")).get("stocks") if tjpath.exists() else None
+    result = build(payload["companies"], cfg, payload["generated_at"], themes, products, heat, flows, tech)
     if result.get("flows") is not None:
         result["flows"]["coverage"] = flow_meta
     # 績效追蹤（模擬持股）

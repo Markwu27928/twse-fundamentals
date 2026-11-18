@@ -192,12 +192,17 @@ def macd(closes, fast=12, slow=26, sig=9):
     if len(hist) < 2:
         return None
     # 最近一次交叉：柱狀體由負轉正（黃金交叉）或由正轉負（死亡交叉），往回最多看 5 天
+    # 計算誤差造成的極小值（例如 1e-16）視為 0，避免漏判或誤判交叉
+    eps = 1e-9 * max(1.0, abs(closes[-1]))
+
+    def sgn(x):
+        return 0 if abs(x) <= eps else (1 if x > 0 else -1)
     cross, ago = None, None
     for i in range(len(hist) - 1, max(len(hist) - 6, 0), -1):
-        if hist[i - 1] <= 0 < hist[i]:
+        if sgn(hist[i - 1]) <= 0 < sgn(hist[i]):
             cross, ago = "golden", len(hist) - 1 - i
             break
-        if hist[i - 1] >= 0 > hist[i]:
+        if sgn(hist[i - 1]) >= 0 > sgn(hist[i]):
             cross, ago = "dead", len(hist) - 1 - i
             break
     return {"macd": line_v[-1], "signal": line_v[-1] - hist[-1], "hist": hist[-1], "cross": cross, "cross_ago": ago}

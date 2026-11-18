@@ -111,6 +111,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
         <option value="mcap">依市值</option>
         <option value="rev_yoy">依營收年增</option>
         <option value="potential">依成長潛力</option>
+        <option value="rsi">依 RSI（低到高）</option>
         <option value="pe">依本益比（低到高）</option>
       </select>
     </div>
@@ -132,6 +133,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
   <div class="foot">
     評分為依設定檔規則計算的財報體質分數，並非預測股價漲跌，也不構成投資建議。權重參考台股實證研究（營收動能、營收市價比、獲利能力、法人買超），尚未經回測驗證，請看「績效追蹤」的實際結果。<br>
     標籤顏色採台股習慣：買進為紅、賣出為綠。<br>
+    「技術面」：RSI、布林通道、MACD 以未還原收盤價計算，只在財報評分外小幅加減分（最多 ±5 分）：RSI 超賣、跌破布林下軌、MACD 黃金交叉加分；RSI 過熱、MACD 死亡交叉扣分；突破布林上軌不扣分。台股研究對技術指標的效果結論不一，請以「績效追蹤」的實際結果為準。<br>
     「匯立分點」：讀取同網站的匯立分點日報資料（永豐金-匯立 9A81），每天只收錄買超、賣超各前 50 名。<br>
     「資金流向」：三大法人買賣超與融資融券來自證交所、櫃買中心每日資料；金額以最新收盤價估算。「籌碼集中」為近 5 日法人買超占發行股數 ≥ 0.5%；「法人買、融資減」代表籌碼由散戶流向法人。<br>
     「營收成長潛力」：近 3 個月營收合計年增 ≥ 25%、比前 3 個月加速 10 個百分點以上、近 3 個月每月年增皆為正、最新月營收創近 12 個月新高、月營收 ≥ 1 億且本業未虧損；建材營造業不適用（不影響評分，供篩選參考）。<br>
@@ -235,6 +237,18 @@ function card(c, rank, product, flowLine) {
       `融資餘額 ${F.margin.toLocaleString()}` + (F.margin_chg5 != null ? `（${F.margin_days} 日 ${wan(F.margin_chg5)}${F.margin_chg5_pct != null ? `，${F.margin_chg5_pct > 0 ? "+" : ""}${F.margin_chg5_pct}%` : ""}）` : "") +
       `；融券餘額 ${F.short.toLocaleString()}` + (F.short_ratio != null ? `；券資比 ${F.short_ratio}%` : "")));
   }
+  const TC = c.tech;
+  if (TC && TC.bb) {
+    const bb = TC.bb, m = TC.macd;
+    const pos = bb.pct_b <= 0 ? "跌破下軌" : bb.pct_b >= 1 ? "突破上軌" : bb.pct_b < 0.2 ? "接近下軌" : bb.pct_b > 0.8 ? "接近上軌" : "通道中段";
+    const rows = [
+      h("tr", {}, h("td", {}, "RSI(14)"), h("td", {}, TC.rsi == null ? `資料不足（${TC.days} 天）` : `${TC.rsi.toFixed(1)}${TC.rsi <= 30 ? "（超賣）" : TC.rsi >= 80 ? "（過熱）" : TC.rsi >= 70 ? "（偏熱）" : ""}`)),
+      h("tr", {}, h("td", {}, "布林通道(20,2)"), h("td", {}, `${pos}（%B ${bb.pct_b.toFixed(2)}；下軌 ${bb.lower.toFixed(2)}、中線 ${bb.mid.toFixed(2)}、上軌 ${bb.upper.toFixed(2)}）`)),
+      h("tr", {}, h("td", {}, "MACD(12,26,9)"), h("td", {}, !m ? `資料不足（${TC.days} 天）` :
+        `${m.hist >= 0 ? "柱狀體為正" : "柱狀體為負"}（MACD ${m.macd.toFixed(2)}、訊號 ${m.signal.toFixed(2)}）` + (m.cross ? `；${m.cross_ago === 0 ? "今天" : m.cross_ago + " 天前"}${m.cross === "golden" ? "黃金交叉" : "死亡交叉"}` : "")))];
+    body.append(h("h4", {}, `技術面（近 ${TC.days} 個交易日收盤價）`), h("table", { class: "revtbl" }, rows));
+    if (TC.gap) body.append(h("div", { class: "meta flag" }, "近 30 天有除權息或減資等價格跳空，指標可能失真，未計入評分。"));
+  }
   const hx = HL && HL[c.code];
   if (hx) {
     const lines = [];
@@ -258,6 +272,7 @@ function sortVal(c, key) {
   if (key === "pe") { const v = c.metrics.pe; return v == null || v >= 999 ? Infinity : v; }
   if (key === "rev_yoy") return -(c.metrics.rev_yoy ?? -Infinity);
   if (key === "mcap") return -(c.mcap ?? -1);
+  if (key === "rsi") { const r = c.tech && c.tech.rsi; return r == null ? Infinity : r; }
   if (key === "potential") return -((c.potential ? 1000 : 0) + (c.potential_rank ?? -999));
   return -(c.score ?? -1);
 }
@@ -390,7 +405,7 @@ function renderTrack() {
   const list = $("list"); list.replaceChildren();
   if (!T || !T.cohorts || !T.cohorts.length) { $("count").textContent = "績效追蹤尚未開始"; return; }
   $("count").textContent = "每月 11 日建立一期模擬持股，追蹤之後的實際報酬，驗證評分是否有效";
-  const ORDER = ["買進", "評分前20%", "成長潛力", "觀望", "評分後20%", "賣出", "全市場"];
+  const ORDER = ["買進", "評分前20%", "成長潛力", "觀望", "評分後20%", "賣出", "RSI超賣", "跌破布林下軌", "MACD黃金交叉", "全市場"];
   for (const c of T.cohorts) {
     const changed = c.rules !== T.current_rules;
     list.append(h("div", { class: "ind" }, `${c.id} 期（${c.formed.slice(5).replace("-", "/")} 建立，經過 ${c.days} 天）`),
