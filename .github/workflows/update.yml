@@ -40,6 +40,11 @@ jobs:
         continue-on-error: true
         run: python src/flows.py
 
+      - name: 技術指標（歷史收盤價、RSI、布林通道、MACD；失敗不影響其他資料）
+        if: steps.fetch.outcome == 'success'
+        continue-on-error: true
+        run: python src/technical.py
+
       - name: 評分與排名
         if: steps.fetch.outcome == 'success'
         run: python src/score.py
@@ -53,7 +58,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/diagnostics.json data/macro_history.json docs/macro.json data/flow_diag.json data/flow_history.json data/flows.json 2>/dev/null || true
+          git add data/diagnostics.json data/macro_history.json docs/macro.json data/flow_diag.json data/flow_history.json data/flows.json data/prices data/technical.json data/technical_diag.json 2>/dev/null || true
           if [ "${{ steps.fetch.outcome }}" = "success" ]; then
             git add data/companies.json data/turnover_history.json data/revenue_history.json data/tracking.json docs/data.json
           fi
