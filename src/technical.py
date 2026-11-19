@@ -205,7 +205,18 @@ def macd(closes, fast=12, slow=26, sig=9):
         if sgn(hist[i - 1]) >= 0 > sgn(hist[i]):
             cross, ago = "dead", len(hist) - 1 - i
             break
-    return {"macd": line_v[-1], "signal": line_v[-1] - hist[-1], "hist": hist[-1], "cross": cross, "cross_ago": ago}
+    # 柱狀體連續放大（正數）或縮小（負數）的天數
+    trend = 0
+    for i in range(len(hist) - 1, 0, -1):
+        d = hist[i] - hist[i - 1]
+        if trend >= 0 and d > eps:
+            trend += 1
+        elif trend <= 0 and d < -eps:
+            trend -= 1
+        else:
+            break
+    return {"macd": line_v[-1], "signal": line_v[-1] - hist[-1], "hist": hist[-1], "cross": cross, "cross_ago": ago,
+            "hist_trend": trend}
 
 
 def analyze(closes):
@@ -216,12 +227,19 @@ def analyze(closes):
         return r
     bb = bollinger(closes)
     r["bb"] = {k: round(v, 4) for k, v in bb.items() if v is not None}
+    # 帶寬在近 60 個交易日中的百分位（0＝最窄）；需要 20＋60 天資料
+    widths = [bollinger(closes[: k + 1])["width"] for k in range(max(19, n - 60), n)]
+    widths = [w for w in widths if w is not None]
+    if len(widths) >= 40 and bb["width"] is not None:
+        r["bb"]["width_rank"] = round(sum(1 for w in widths if w < bb["width"]) / len(widths) * 100, 1)
     # 價格跳空偵測：單日跌幅超過跌停（除權息、減資等），指標可能失真
     jumps = [i for i in range(max(1, n - 30), n) if (closes[i] / closes[i - 1] - 1) * 100 < JUMP_PCT]
     r["gap"] = bool(jumps)
     if n >= MIN_DAYS:
         rv = rsi(closes)
         r["rsi"] = round(rv, 2) if rv is not None else None
+        rp = rsi(closes[:-5])
+        r["rsi_prev5"] = round(rp, 2) if rp is not None else None
         m = macd(closes)
         if m:
             r["macd"] = {k: (round(v, 4) if isinstance(v, float) else v) for k, v in m.items()}

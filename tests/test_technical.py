@@ -108,6 +108,22 @@ def test_analyze():
     check("analyze：單日跌幅超過跌停（除權息、減資）標示價格跳空", T.analyze(gap)["gap"] is True and a["gap"] is False)
 
 
+def test_extra():
+    xs = series(85)
+    a = T.analyze(xs)
+    check("RSI 5 天前的值＝少 5 天資料的 RSI", a["rsi_prev5"] == round(T.rsi(xs[:-5]), 2))
+    # 盤整後波動收窄：帶寬百分位應接近 0
+    calm = series(60, seed=2) + [series(60, seed=2)[-1] * (1 + 0.0005 * (i % 2)) for i in range(25)]
+    ac = T.analyze(calm)
+    check("布林帶寬百分位：波動收窄時接近 0（通道收窄）", ac["bb"].get("width_rank") is not None and ac["bb"]["width_rank"] <= 5, str(ac["bb"].get("width_rank")))
+    up = [100.0] * 72 + [100 * 1.02 ** i for i in range(1, 14)]      # 盤整後最近 13 天加速上漲
+    m = T.macd(up)
+    check("MACD 柱狀體連續放大天數為正", m["hist_trend"] > 0, str(m["hist_trend"]))
+    dn = [200 - x for x in up]                                        # 上漲情境的鏡像：跌勢加速
+    check("MACD 柱狀體連續縮小天數為負", T.macd(dn)["hist_trend"] < 0)
+    check("資料只有 30 天：沒有帶寬百分位", "width_rank" not in T.analyze(xs[:30])["bb"])
+
+
 def test_parse():
     j = {"stat": "OK", "date": "20261117", "tables": [
         {"title": "價格指數", "fields": ["指數", "收盤指數"], "data": [["發行量加權股價指數", "28,000.00"]]},
@@ -144,6 +160,7 @@ if __name__ == "__main__":
     test_vs_pandas()
     test_cross()
     test_analyze()
+    test_extra()
     test_parse()
     test_adjust()
     failed = [n for n, ok in results if not ok]

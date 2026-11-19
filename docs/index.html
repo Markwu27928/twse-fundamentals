@@ -98,6 +98,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
     <button id="v-theme" aria-pressed="false">主題族群</button>
     <button id="v-hot" aria-pressed="false">熱門產品</button>
     <button id="v-flow" aria-pressed="false">資金流向</button>
+    <button id="v-tech" aria-pressed="false">技術指標</button>
     <button id="v-track" aria-pressed="false">績效追蹤</button>
   </div>
 
@@ -117,6 +118,21 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
     </div>
   </div>
 
+  <div id="ctl-tech" class="controls" hidden>
+    <div class="seg" role="group" aria-label="技術指標">
+      <button id="t-rsi" aria-pressed="true">RSI</button>
+      <button id="t-bb" aria-pressed="false">布林通道</button>
+      <button id="t-macd" aria-pressed="false">MACD</button>
+    </div>
+    <div class="row">
+      <select id="tech-pick" aria-label="清單"></select>
+      <select id="tech-fund" aria-label="財報條件">
+        <option value="all">不限財報評分</option>
+        <option value="nosell">排除評分賣出</option>
+        <option value="buy">只看評分買進</option>
+      </select>
+    </div>
+  </div>
   <div id="ctl-flow" class="controls" hidden>
     <select id="flow-pick" aria-label="資金流向清單"></select>
   </div>
@@ -146,7 +162,7 @@ button.more{width:100%;margin:10px 0;padding:11px;border:1px solid var(--line);b
 <script>
 const PAGE = 100;
 const LABELS = ["全部", "買進", "觀望", "賣出", "資料不足"];
-const st = { view: "all", hi: false, pot: false, label: "全部", ind: "全部", sort: "score", q: "", rankBy: "score", theme: "全部", limit: PAGE };
+const st = { tind: "rsi", tlist: {}, tfund: "all", view: "all", hi: false, pot: false, label: "全部", ind: "全部", sort: "score", q: "", rankBy: "score", theme: "全部", limit: PAGE };
 let D = null, BY = {}, HL = null, HL_META = null, HL_ERR = null;
 const HUILI_URL = "../huili/data.json";
 const HUILI_VERSION = 1;
@@ -423,6 +439,69 @@ function renderTrack() {
   list.append(h("div", { class: "foot" }, T.note + " 勝率：該組中報酬高於全市場平均的股票比例。要累積多期、經過多個月，才能判斷評分是否穩定有效；單一期別的好壞可能只是運氣。"));
 }
 
+// ---------- 技術指標（各指標獨立篩選） ----------
+const f2 = (v, d = 1) => v == null ? "—" : Number(v).toFixed(d);
+const TECH = {
+  rsi: {
+    name: "RSI(14)",
+    lists: {
+      "超賣（RSI ≤ 30）": { f: (t) => t.rsi != null && t.rsi <= 30, s: (t) => t.rsi },
+      "偏低（30–40）": { f: (t) => t.rsi != null && t.rsi > 30 && t.rsi <= 40, s: (t) => t.rsi },
+      "由超賣回升（5 天前 ≤ 30，現在 > 30）": { f: (t) => t.rsi != null && t.rsi_prev5 != null && t.rsi_prev5 <= 30 && t.rsi > 30, s: (t) => -(t.rsi - t.rsi_prev5) },
+      "偏熱（70–80）": { f: (t) => t.rsi != null && t.rsi >= 70 && t.rsi < 80, s: (t) => -t.rsi },
+      "過熱（RSI ≥ 80）": { f: (t) => t.rsi != null && t.rsi >= 80, s: (t) => -t.rsi },
+      "全部（由低到高）": { f: (t) => t.rsi != null, s: (t) => t.rsi },
+    },
+    line: (t) => `RSI ${f2(t.rsi)}（5 天前 ${f2(t.rsi_prev5)}）`,
+  },
+  bb: {
+    name: "布林通道(20,2)",
+    lists: {
+      "跌破下軌（%B ≤ 0）": { f: (t) => t.bb && t.bb.pct_b <= 0, s: (t) => t.bb.pct_b },
+      "接近下軌（%B 0–0.2）": { f: (t) => t.bb && t.bb.pct_b > 0 && t.bb.pct_b <= 0.2, s: (t) => t.bb.pct_b },
+      "通道收窄（帶寬為近 60 日最窄 10%）": { f: (t) => t.bb && t.bb.width_rank != null && t.bb.width_rank <= 10, s: (t) => t.bb.width_rank },
+      "接近上軌（%B 0.8–1）": { f: (t) => t.bb && t.bb.pct_b >= 0.8 && t.bb.pct_b < 1, s: (t) => -t.bb.pct_b },
+      "突破上軌（%B ≥ 1）": { f: (t) => t.bb && t.bb.pct_b >= 1, s: (t) => -t.bb.pct_b },
+    },
+    line: (t) => `%B ${f2(t.bb.pct_b, 2)}；下軌 ${f2(t.bb.lower, 2)}、中線 ${f2(t.bb.mid, 2)}、上軌 ${f2(t.bb.upper, 2)}；帶寬 ${f2(t.bb.width)}%` +
+      (t.bb.width_rank != null ? `（近 60 日第 ${f2(t.bb.width_rank, 0)} 百分位）` : ""),
+  },
+  macd: {
+    name: "MACD(12,26,9)",
+    lists: {
+      "黃金交叉（3 天內）": { f: (t) => t.macd && t.macd.cross === "golden" && t.macd.cross_ago < 3, s: (t) => t.macd.cross_ago },
+      "零軸上黃金交叉（3 天內）": { f: (t) => t.macd && t.macd.cross === "golden" && t.macd.cross_ago < 3 && t.macd.macd > 0, s: (t) => t.macd.cross_ago },
+      "空方減弱（柱狀體為負、連 3 天回升）": { f: (t) => t.macd && t.macd.hist < 0 && t.macd.hist_trend >= 3, s: (t) => -t.macd.hist_trend },
+      "多方增強（柱狀體為正、連 3 天放大）": { f: (t) => t.macd && t.macd.hist > 0 && t.macd.hist_trend >= 3, s: (t) => -t.macd.hist_trend },
+      "死亡交叉（3 天內）": { f: (t) => t.macd && t.macd.cross === "dead" && t.macd.cross_ago < 3, s: (t) => t.macd.cross_ago },
+    },
+    line: (t) => `MACD ${f2(t.macd.macd, 2)}、訊號 ${f2(t.macd.signal, 2)}、柱狀體 ${f2(t.macd.hist, 2)}` +
+      (t.macd.cross ? `；${t.macd.cross_ago === 0 ? "今天" : t.macd.cross_ago + " 天前"}${t.macd.cross === "golden" ? "黃金交叉" : "死亡交叉"}` : "") +
+      (t.macd.hist_trend ? `；柱狀體連 ${Math.abs(t.macd.hist_trend)} 天${t.macd.hist_trend > 0 ? "上升" : "下降"}` : ""),
+  },
+};
+function fillTechPick() {
+  const T = TECH[st.tind];
+  const names = Object.keys(T.lists);
+  const cur = st.tlist[st.tind] || names[0];
+  $("tech-pick").replaceChildren(...names.map((n) => h("option", { value: n }, n)));
+  $("tech-pick").value = cur;
+  ["rsi", "bb", "macd"].forEach((k) => $("t-" + k).setAttribute("aria-pressed", st.tind === k));
+}
+function renderTech() {
+  const T = TECH[st.tind];
+  const name = st.tlist[st.tind] || Object.keys(T.lists)[0];
+  const L = T.lists[name];
+  const fund = (c) => st.tfund === "all" || (st.tfund === "buy" ? c.label === "買進" : c.label !== "賣出");
+  const rows = D.companies.filter((c) => c.tech && fund(c)).filter((c) => { try { return L.f(c.tech); } catch (e) { return false; } });
+  rows.sort((a, b) => L.s(a.tech) - L.s(b.tech));
+  const days = rows[0]?.tech?.days || D.companies.find((c) => c.tech)?.tech?.days;
+  $("count").textContent = `${T.name}：${name}（${rows.length} 檔；近 ${days || "—"} 個交易日收盤價）`;
+  const list = $("list"); list.replaceChildren();
+  rows.slice(0, st.limit).forEach((c, i) => list.append(card(c, i + 1, null, T.line(c.tech) + (c.tech.gap ? "（近期價格跳空，指標可能失真）" : ""))));
+  if (rows.length > st.limit) list.append(h("button", { class: "more", onclick: () => { st.limit += PAGE; render(); } }, `顯示更多（還有 ${rows.length - st.limit} 檔）`));
+}
+
 function render() {
   $("ctl-all").hidden = st.view !== "all";
   $("ctl-top").hidden = st.view === "all";
@@ -431,6 +510,9 @@ function render() {
   if (st.view === "flow") $("ctl-top").hidden = true;
   $("v-flow").setAttribute("aria-pressed", st.view === "flow");
   $("v-track").setAttribute("aria-pressed", st.view === "track");
+  $("v-tech").setAttribute("aria-pressed", st.view === "tech");
+  $("ctl-tech").hidden = st.view !== "tech";
+  if (st.view === "tech") $("ctl-top").hidden = true;
   if (st.view === "track") $("ctl-top").hidden = true;
   $("v-theme").setAttribute("aria-pressed", st.view === "theme");
   $("v-hot").setAttribute("aria-pressed", st.view === "hot");
@@ -446,6 +528,7 @@ function render() {
   else if (st.view === "theme") renderTheme();
   else if (st.view === "hot") renderHot();
   else if (st.view === "track") renderTrack();
+  else if (st.view === "tech") renderTech();
   else renderFlow();
 }
 
@@ -550,6 +633,10 @@ async function init() {
   $("v-hot").onclick = () => { st.view = "hot"; render(); };
   $("v-flow").onclick = () => { st.view = "flow"; render(); };
   $("v-track").onclick = () => { st.view = "track"; render(); };
+  $("v-tech").onclick = () => { st.view = "tech"; st.limit = PAGE; fillTechPick(); render(); };
+  ["rsi", "bb", "macd"].forEach((k) => ($("t-" + k).onclick = () => { st.tind = k; st.limit = PAGE; fillTechPick(); render(); }));
+  $("tech-pick").onchange = (e) => { st.tlist[st.tind] = e.target.value; st.limit = PAGE; render(); };
+  $("tech-fund").onchange = (e) => { st.tfund = e.target.value; st.limit = PAGE; render(); };
   if (D.flows) {
     $("flow-pick").append(...FLOW_GROUPS.map((n) => h("option", { value: n }, n)),
       ...HL_LISTS.map((n) => h("option", { value: n }, n)),

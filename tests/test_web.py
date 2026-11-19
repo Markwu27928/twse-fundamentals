@@ -81,7 +81,29 @@ def main():
         c["tech"] = {"days": 80, "close": c.get("price") or 50, "gap": i % 50 == 0, "rsi": float(r),
                      "bb": {"mid": 100.0, "upper": 110.0, "lower": 90.0, "pct_b": -0.1 if r < 25 else 0.5, "width": 20.0},
                      "macd": {"macd": 1.2, "signal": 0.8, "hist": 0.4, "cross": "golden" if i % 9 == 0 else None, "cross_ago": 0 if i % 9 == 0 else None}}
+        c["tech"]["rsi_prev5"] = float((r + 20) % 90)
+        c["tech"]["bb"]["width_rank"] = float((i * 13) % 100)
+        c["tech"]["bb"]["pct_b"] = round(((i * 17) % 140) / 100 - 0.2, 2)
+        c["tech"]["macd"]["hist"] = 0.4 if i % 3 else -0.4
+        c["tech"]["macd"]["macd"] = 1.2 if i % 4 else -1.2
+        c["tech"]["macd"]["hist_trend"] = (i % 7) - 3
+        c["tech"]["macd"]["cross"] = "golden" if i % 9 == 0 else "dead" if i % 11 == 0 else None
+        c["tech"]["macd"]["cross_ago"] = (i % 4) if c["tech"]["macd"]["cross"] else None
         c["tech_signals"] = sc.tech_adjust(c["tech"], cfg)[2]
+    # 各技術清單的預期檔數（與網頁同樣條件，用 Python 獨立計算）
+    global tech_expect
+    T_ = [c["tech"] for c in sample["companies"]]
+    BUYS = [c["tech"] for c in sample["companies"] if c["label"] == "買進"]
+    tech_expect = {
+        ("rsi", "超賣（RSI ≤ 30）", "all"): sum(1 for t in T_ if t["rsi"] <= 30),
+        ("rsi", "由超賣回升（5 天前 ≤ 30，現在 > 30）", "all"): sum(1 for t in T_ if t["rsi_prev5"] <= 30 < t["rsi"]),
+        ("rsi", "超賣（RSI ≤ 30）", "buy"): sum(1 for t in BUYS if t["rsi"] <= 30),
+        ("bb", "跌破下軌（%B ≤ 0）", "all"): sum(1 for t in T_ if t["bb"]["pct_b"] <= 0),
+        ("bb", "通道收窄（帶寬為近 60 日最窄 10%）", "all"): sum(1 for t in T_ if t["bb"]["width_rank"] <= 10),
+        ("macd", "黃金交叉（3 天內）", "all"): sum(1 for t in T_ if t["macd"]["cross"] == "golden" and t["macd"]["cross_ago"] < 3),
+        ("macd", "零軸上黃金交叉（3 天內）", "all"): sum(1 for t in T_ if t["macd"]["cross"] == "golden" and t["macd"]["cross_ago"] < 3 and t["macd"]["macd"] > 0),
+        ("macd", "空方減弱（柱狀體為負、連 3 天回升）", "all"): sum(1 for t in T_ if t["macd"]["hist"] < 0 and t["macd"]["hist_trend"] >= 3),
+    }
     # 績效追蹤模擬資料：兩期，第二期為舊版規則
     import tracking as tk
     import datetime as dt
@@ -272,6 +294,27 @@ def main():
         fb = page.locator("details.co").first.inner_text()
         check("卡片明細：法人買賣超表與融資融券", "法人買賣超（張" in fb and "外資" in fb and "投信" in fb and "融資餘額" in fb and "券資比" in fb)
         page.screenshot(path=str(shots / "shot_flow_list.png"))
+
+        # 技術指標分頁（各指標獨立）
+        page.click("#v-tech")
+        check("技術指標分頁：顯示 RSI／布林／MACD 切換與清單選單", page.locator("#ctl-tech").is_visible() and page.locator("#ctl-all").is_hidden())
+        for (ind, lst, fund), exp in tech_expect.items():
+            page.click("#t-" + ind)
+            page.select_option("#tech-pick", lst)
+            page.select_option("#tech-fund", fund)
+            txt = page.inner_text("#count")
+            import re as _re
+            got = int(_re.search(r"（(\d+) 檔", txt).group(1))
+            n_cards = page.locator("details.co").count()
+            check(f"技術清單檔數正確：{ind}／{lst}／{fund}", got == exp and n_cards == min(exp, 100), f"(網頁 {got}、卡片 {n_cards}、預期 {exp})")
+        page.select_option("#tech-fund", "all")
+        page.click("#t-rsi")
+        page.select_option("#tech-pick", "全部（由低到高）")
+        vals = [float(x.split("RSI ")[1].split("（")[0]) for x in page.locator("details.co .flow").all_inner_texts()[:30]]
+        check("RSI 全部清單由低到高排序", vals == sorted(vals), str(vals[:5]))
+        page.click("#t-bb")
+        check("切換指標時清單選單跟著換", "跌破下軌" in page.locator("#tech-pick").inner_text() and "RSI" not in page.locator("#tech-pick").inner_text())
+        page.screenshot(path=str(shots / "shot_tech.png"))
 
         # 技術面
         page.click("#v-all")
