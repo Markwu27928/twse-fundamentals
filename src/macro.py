@@ -23,6 +23,8 @@ from zoneinfo import ZoneInfo
 
 import requests
 
+import futures
+
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 HIST = ROOT / "data" / "macro_history.json"
 OUT = ROOT / "docs" / "macro.json"
@@ -346,7 +348,16 @@ def main():
             del hist[k][old]
     hist["closed"] = sorted(set(hist["closed"]))[-60:]
 
+    # 台指期三大法人未平倉（外資淨空單增減）
+    try:
+        note, ferr = futures.update(hist, today)
+        print(f"[期貨] {note}")
+        errors.extend(f"期貨：{e}" for e in ferr)
+    except Exception as e:  # noqa: BLE001
+        errors.append(f"期貨：{e}")
+
     result = summarize(hist, cfg, today)
+    result["futures"] = futures.summarize(hist)
     result["generated_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
     result["errors"] = errors
     result["config"] = {k: cfg[k] for k in ("days", "foreign_threshold_100m", "fx_threshold_pct", "fx_window_calendar_days")}

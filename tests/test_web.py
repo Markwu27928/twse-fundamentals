@@ -122,7 +122,10 @@ def main():
     macro_sample = {"generated_at": "2026-11-16T09:00:00+00:00", "errors": [],
                     "fx": {"date": "2026-11-16", "rate": 31.312, "change_1d_pct": 0.21, "change_win_pct": 0.97, "win_from": "2026-11-09"},
                     "foreign": {"date": "2026-11-16", "today": -184.0, "days": 5, "sum": -612.0, "series": []},
-                    "verdict": {"label": "明顯匯出", "flow": -1, "fx": -1, "detail": "外資近 5 日賣超 612 億，新台幣貶值（美元 +0.97%）"}}
+                    "verdict": {"label": "明顯匯出", "flow": -1, "fx": -1, "detail": "外資近 5 日賣超 612 億，新台幣貶值（美元 +0.97%）"},
+                    "futures": {"date": "2026-11-20", "who": "外資", "net": -38000, "long": 10000, "short": 48000, "position": "淨空單",
+                                "size": 38000, "chg1": -3000, "chg5": -7000, "chg1_label": "空單增加", "chg5_label": "空單增加", "days5": 5,
+                                "others": {"投信": 57000, "自營商": -1000}, "series": []}}
     (tmp / "macro.json").write_text(json.dumps(macro_sample, ensure_ascii=False), encoding="utf-8")
     # 匯立分點：用 huili repo 產生程式與真實 CSV 建立資料檔（有 huili 時），否則用模擬資料
     global hl_codes
@@ -163,6 +166,7 @@ def main():
         page.wait_for_selector("#macro:not([hidden])")
         mt = page.inner_text("#macro")
         check("標題顯示匯率、外資買賣超與判讀", "31.312" in mt and "-184" in mt and "-612" in mt and "判讀：明顯匯出" in mt, mt.replace("\n", " | "))
+        check("期貨：外資台指期淨空單口數與增減", "淨空單 38,000 口" in mt and "空單增加 3,000 口" in mt and "空單增加 7,000 口" in mt and "投信 淨多 57,000 口" in mt, mt.replace("\n", " | ")[-260:])
         check("匯出判讀用綠色標籤、美元上漲用紅色", page.locator("#macro .vd-out").count() == 1 and page.locator("#macro .up").count() >= 1)
         page.screenshot(path=str(shots / "shot_macro.png"))
         check("全市場預設顯示第一頁 100 檔", page.locator("details.co").count() == 100)
