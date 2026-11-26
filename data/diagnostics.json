@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-11-26T10:40:13+00:00",
+ "generated_at": "2026-11-26T14:44:27+00:00",
  "errors": [],
  "markets": {
   "上市": {
@@ -1327,7 +1327,7 @@
   "上櫃": {
    "sources": {
     "basic": {
-     "rows": 898,
+     "rows": 899,
      "keys": [
       "Date",
       "SecuritiesCompanyCode",
@@ -1363,7 +1363,7 @@
       "IssueShares"
      ],
      "sample": {
-      "Date": "1151125",
+      "Date": "1151126",
       "SecuritiesCompanyCode": "1240",
       "CompanyName": "茂生農經股份有限公司",
       "CompanyAbbreviation": "茂生農經",
@@ -1471,7 +1471,7 @@
       "基本每股盈餘（元）": "3.63"
      },
      "code_key": "SecuritiesCompanyCode",
-     "matched_companies": 898
+     "matched_companies": 899
     },
     "balance": {
      "rows": 892,
@@ -1532,7 +1532,7 @@
       "每股參考淨值": "32.65"
      },
      "code_key": "SecuritiesCompanyCode",
-     "matched_companies": 898
+     "matched_companies": 899
     },
     "income_mim": {
      "rows": 1,
@@ -2368,7 +2368,7 @@
       "PriceBookRatio": "1.57"
      },
      "code_key": "SecuritiesCompanyCode",
-     "matched_companies": 894
+     "matched_companies": 895
     },
     "price": {
      "rows": 13832,
@@ -2413,113 +2413,113 @@
       "NextLimitDown": "0.01"
      },
      "code_key": "SecuritiesCompanyCode",
-     "matched_companies": 895
+     "matched_companies": 896
     }
    },
    "fields": {
     "industry": {
      "source": "basic",
      "matched_key": "SecuritiesIndustryCode",
-     "filled": 898,
-     "base": 898,
+     "filled": 899,
+     "base": 899,
      "rate": 1.0
     },
     "capital": {
      "source": "basic",
      "matched_key": "Paidin.Capital.NTDollars",
-     "filled": 898,
-     "base": 898,
+     "filled": 899,
+     "base": 899,
      "rate": 1.0
     },
     "shares": {
      "source": "basic",
      "matched_key": "IssueShares",
-     "filled": 898,
-     "base": 898,
+     "filled": 899,
+     "base": 899,
      "rate": 1.0
     },
     "year": {
      "source": "income",
      "matched_key": "Year",
-     "filled": 898,
-     "base": 898,
+     "filled": 899,
+     "base": 899,
      "rate": 1.0
     },
     "season": {
      "source": "income",
      "matched_key": "Season",
-     "filled": 898,
-     "base": 898,
+     "filled": 899,
+     "base": 899,
      "rate": 1.0
     },
     "revenue": {
      "source": "income",
      "matched_key": "營業收入",
-     "filled": 898,
-     "base": 898,
+     "filled": 899,
+     "base": 899,
      "rate": 1.0
     },
     "gross_profit": {
      "source": "income",
      "matched_key": "營業毛利（毛損）淨額",
-     "filled": 891,
-     "base": 898,
+     "filled": 892,
+     "base": 899,
      "rate": 0.992
     },
     "op_income": {
      "source": "income",
      "matched_key": "營業利益（損失）",
-     "filled": 898,
-     "base": 898,
+     "filled": 899,
+     "base": 899,
      "rate": 1.0
     },
     "net_income": {
      "source": "income",
      "matched_key": "本期淨利（淨損）",
-     "filled": 898,
-     "base": 898,
+     "filled": 899,
+     "base": 899,
      "rate": 1.0
     },
     "eps": {
      "source": "income",
      "matched_key": "基本每股盈餘（元）",
-     "filled": 898,
-     "base": 898,
+     "filled": 899,
+     "base": 899,
      "rate": 1.0
     },
     "total_assets": {
      "source": "balance",
      "matched_key": "資產總計",
-     "filled": 898,
-     "base": 898,
+     "filled": 899,
+     "base": 899,
      "rate": 1.0
     },
     "total_liab": {
      "source": "balance",
      "matched_key": "負債總計",
-     "filled": 898,
-     "base": 898,
+     "filled": 899,
+     "base": 899,
      "rate": 1.0
     },
     "cur_assets": {
      "source": "balance",
      "matched_key": "流動資產",
-     "filled": 898,
-     "base": 898,
+     "filled": 899,
+     "base": 899,
      "rate": 1.0
     },
     "cur_liab": {
      "source": "balance",
      "matched_key": "流動負債",
-     "filled": 898,
-     "base": 898,
+     "filled": 899,
+     "base": 899,
      "rate": 1.0
     },
     "equity": {
      "source": "balance",
      "matched_key": "權益總計",
-     "filled": 898,
-     "base": 898,
+     "filled": 899,
+     "base": 899,
      "rate": 1.0
     },
     "rev_yoy": {
@@ -2560,54 +2560,54 @@
     "pe": {
      "source": "valuation",
      "matched_key": "PriceEarningRatio",
-     "filled": 670,
-     "base": 894,
-     "rate": 0.749
+     "filled": 671,
+     "base": 895,
+     "rate": 0.75
     },
     "pb": {
      "source": "valuation",
      "matched_key": "PriceBookRatio",
-     "filled": 894,
-     "base": 894,
+     "filled": 895,
+     "base": 895,
      "rate": 1.0
     },
     "dy": {
      "source": "valuation",
      "matched_key": "YieldRatio",
-     "filled": 894,
-     "base": 894,
+     "filled": 895,
+     "base": 895,
      "rate": 1.0
     },
     "price": {
      "source": "price",
      "matched_key": "Close",
-     "filled": 879,
-     "base": 895,
+     "filled": 880,
+     "base": 896,
      "rate": 0.982
     },
     "trade_value": {
      "source": "price",
      "matched_key": "TransactionAmount",
-     "filled": 895,
-     "base": 895,
+     "filled": 896,
+     "base": 896,
      "rate": 1.0
     },
     "change": {
      "source": "price",
      "matched_key": "Change",
-     "filled": 878,
-     "base": 895,
+     "filled": 879,
+     "base": 896,
      "rate": 0.981
     }
    },
-   "companies": 898,
+   "companies": 899,
    "change_sign": {
     "up": 666,
-    "down": 155,
+    "down": 156,
     "flat": 57
    },
    "fs_formats": {
-    "ci": 891,
+    "ci": 892,
     "bd": 7
    },
    "no_statement": []
